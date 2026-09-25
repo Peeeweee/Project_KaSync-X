@@ -22,15 +22,15 @@ function makeWedgePath(
   const startRad = toRad(startDeg);
   const endRad = toRad(endDeg);
 
-  const x1 = CENTER + outerR * Math.cos(startRad);
-  const y1 = CENTER + outerR * Math.sin(startRad);
-  const x2 = CENTER + outerR * Math.cos(endRad);
-  const y2 = CENTER + outerR * Math.sin(endRad);
+  const x1 = outerR * Math.cos(startRad);
+  const y1 = outerR * Math.sin(startRad);
+  const x2 = outerR * Math.cos(endRad);
+  const y2 = outerR * Math.sin(endRad);
 
-  const x3 = CENTER + innerR * Math.cos(endRad);
-  const y3 = CENTER + innerR * Math.sin(endRad);
-  const x4 = CENTER + innerR * Math.cos(startRad);
-  const y4 = CENTER + innerR * Math.sin(startRad);
+  const x3 = innerR * Math.cos(endRad);
+  const y3 = innerR * Math.sin(endRad);
+  const x4 = innerR * Math.cos(startRad);
+  const y4 = innerR * Math.sin(startRad);
 
   const largeArc = endDeg - startDeg > 180 ? 1 : 0;
 
