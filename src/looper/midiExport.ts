@@ -1,12 +1,13 @@
 import { Midi } from '@tonejs/midi';
 import type { Track } from './trackModel';
+import { toast } from '../store/toastStore';
 
 export function exportMIDI(tracks: Track[], bpm: number) {
   // We export all tracks that have events, ignoring muted tracks.
   const activeTracks = tracks.filter(t => t.events.length > 0 && !t.isMuted);
   
   if (activeTracks.length === 0) {
-    alert("No active tracks with recorded events to export.");
+    toast.warning('No recorded events to export. Hit ● Record + ▶ Play and perform first.');
     return;
   }
 
@@ -41,14 +42,15 @@ export function exportMIDI(tracks: Track[], bpm: number) {
   });
 
   const buffer = midi.toArray();
-  const blob = new Blob([buffer as any], { type: 'audio/midi' });
+  const blob = new Blob([buffer.buffer as ArrayBuffer], { type: 'audio/midi' });
   const url = URL.createObjectURL(blob);
   
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'kasync_session.mid';
+  a.download = `kasync_session_${new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')}.mid`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  toast.success(`Exported ${activeTracks.length} track${activeTracks.length > 1 ? 's' : ''} as MIDI.`);
 }
