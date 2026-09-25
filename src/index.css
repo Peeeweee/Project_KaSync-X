@@ -106,3 +106,142 @@ body {
 .low-perf-mode .particle {
   display: none !important;
 }
+
+/* ──────────────────────────────────────────────
+   Instrument Panel Animations
+────────────────────────────────────────────── */
+
+@keyframes instrument-select-flash {
+  0%   { box-shadow: 0 0 0px rgba(0, 240, 255, 0); border-color: rgba(0,240,255,0.3); }
+  30%  { box-shadow: 0 0 24px rgba(0, 240, 255, 0.7), inset 0 0 12px rgba(0,240,255,0.15); border-color: rgba(0,240,255,1); }
+  100% { box-shadow: 0 0 10px rgba(0, 240, 255, 0.2), inset 0 0 4px rgba(0,240,255,0.05); border-color: rgba(0,240,255,0.5); }
+}
+
+@keyframes waveform-saw {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes waveform-sine {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes waveform-fm {
+  0%   { transform: translateX(0) scaleY(1); }
+  50%  { transform: translateX(-25%) scaleY(1.3); }
+  100% { transform: translateX(-50%) scaleY(1); }
+}
+
+@keyframes waveform-pad {
+  0%   { transform: translateX(0); opacity: 0.6; }
+  50%  { transform: translateX(-25%); opacity: 1; }
+  100% { transform: translateX(-50%); opacity: 0.6; }
+}
+
+@keyframes instrument-panel-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.instrument-card-active {
+  animation: instrument-select-flash 0.45s ease-out forwards;
+}
+
+.instrument-panel-enter {
+  animation: instrument-panel-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Animated waveform decorations — pure CSS, no canvas */
+.waveform-saw {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 8px,
+    var(--color-primary-glow) 8px,
+    var(--color-primary-glow) 9px
+  );
+  background-size: 200% 100%;
+  animation: waveform-saw 2s linear infinite;
+  opacity: 0.25;
+}
+
+.waveform-fm {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    var(--color-secondary) 4px,
+    transparent 8px,
+    transparent 10px,
+    var(--color-secondary) 12px,
+    transparent 16px
+  );
+  background-size: 200% 100%;
+  animation: waveform-fm 1.4s ease-in-out infinite;
+  opacity: 0.2;
+}
+
+.waveform-ep {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    var(--color-highlight) 6px,
+    transparent 12px
+  );
+  background-size: 200% 100%;
+  animation: waveform-sine 1.8s linear infinite;
+  opacity: 0.2;
+}
+
+.waveform-pad {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    rgba(157, 78, 221, 0.8) 10px,
+    transparent 20px
+  );
+  background-size: 200% 100%;
+  animation: waveform-pad 3s ease-in-out infinite;
+  opacity: 0.15;
+}
+
+/* ──────────────────────────────────────────────
+   MIDI Panel & Toast Animations
+────────────────────────────────────────────── */
+
+@keyframes midi-slide-up {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes toast-fade-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+.midi-panel-enter {
+  animation: midi-slide-up 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.toast-enter {
+  animation: toast-fade-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Custom scrollbar for MIDI panel */
+.midi-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(157, 78, 221, 0.3) transparent;
+}
+.midi-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+.midi-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.midi-scroll::-webkit-scrollbar-thumb {
+  background: rgba(157, 78, 221, 0.35);
+  border-radius: 99px;
+}
+.midi-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(157, 78, 221, 0.6);
+}
