@@ -170,6 +170,8 @@ export function RootWheel() {
     ? CHROMATIC_NOTES.indexOf(hoveredBass)
     : -1;
 
+  if (mode === 'Song') return null;
+
   return (
     <div
       className="absolute z-30 pointer-events-none drop-shadow-2xl transition-all duration-300 ease-out"

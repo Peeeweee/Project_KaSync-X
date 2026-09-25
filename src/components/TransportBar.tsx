@@ -1,8 +1,52 @@
 import { useState, useMemo } from 'react';
 import { useMusicStore } from '../store/musicState';
 import { useLooperStore } from '../store/looperState';
+import { useSongStore } from '../store/songStore';
 import { CHROMATIC_NOTES } from '../music/scales';
 import { WakandanSelect } from './WakandanSelect';
+
+/** Inline Song navigation widget for TransportBar in Song Mode */
+function SongTransportControls() {
+  const songs = useSongStore(s => s.songs);
+  const activeSongId = useSongStore(s => s.activeSongId);
+  const activeSectionIndex = useSongStore(s => s.activeSectionIndex);
+  const nextSection = useSongStore(s => s.nextSection);
+  const prevSection = useSongStore(s => s.prevSection);
+
+  const activeSong = songs.find(s => s.id === activeSongId);
+  const activeSection = activeSong?.sections[activeSectionIndex];
+  const total = activeSong?.sections.length ?? 0;
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={prevSection}
+        disabled={activeSectionIndex === 0}
+        className="w-7 h-7 rounded-full border border-white/10 flex items-center justify-center text-xs text-[#6E7C9C] hover:text-white hover:border-white/30 disabled:opacity-20 transition-all"
+      >
+        ‹
+      </button>
+      <div className="flex flex-col items-center min-w-[80px]">
+        <span
+          className="text-[10px] font-bold tracking-widest"
+          style={{ color: activeSection?.colorTag ?? '#9D4EDD' }}
+        >
+          {activeSection?.name ?? '—'}
+        </span>
+        <span className="text-[8px] text-[#6E7C9C] tracking-widest font-mono">
+          {activeSectionIndex + 1} / {total}
+        </span>
+      </div>
+      <button
+        onClick={nextSection}
+        disabled={activeSectionIndex >= total - 1}
+        className="w-7 h-7 rounded-full border border-white/10 flex items-center justify-center text-xs text-[#6E7C9C] hover:text-white hover:border-white/30 disabled:opacity-20 transition-all"
+      >
+        ›
+      </button>
+    </div>
+  );
+}
 
 export function TransportBar() {
   const { mode, showExtendedQualities, currentKey, snapToScale, currentScale, setMusicState } = useMusicStore();
@@ -126,53 +170,62 @@ export function TransportBar() {
             </button>
           </div>
 
-          <div className="flex flex-col items-center">
-            <span className={hudLabelClass}>Root</span>
-            <WakandanSelect 
-              value={currentKey}
-              onChange={(e) => setMusicState({ currentKey: e.target.value })}
-              className="text-[12px] font-bold"
-              color="#00f0ff"
-            >
-              {CHROMATIC_NOTES.map(n => <option key={n} value={n} className="bg-[#0a0b10]">{n}</option>)}
-            </WakandanSelect>
-          </div>
 
-          <div className="flex flex-col items-center">
-            <span className={hudLabelClass}>Scale</span>
-            <WakandanSelect 
-              value={currentScale}
-              onChange={(e) => setMusicState({ currentScale: e.target.value })}
-              className="text-[12px] font-bold"
-              color="#9D4EDD"
-            >
-              <option value="Major" className="bg-[#0a0b10]">Major</option>
-              <option value="Minor" className="bg-[#0a0b10]">Minor</option>
-              <option value="PentatonicMajor" className="bg-[#0a0b10]">Pentatonic</option>
-              <option value="Blues" className="bg-[#0a0b10]">Blues</option>
-            </WakandanSelect>
-          </div>
+          {/* ── SONG MODE: hide Root/Scale/Snap, show Song info ── */}
+          {mode !== 'Song' && (
+            <>
+              <div className="flex flex-col items-center">
+                <span className={hudLabelClass}>Root</span>
+                <WakandanSelect 
+                  value={currentKey}
+                  onChange={(e) => setMusicState({ currentKey: e.target.value })}
+                  className="text-[12px] font-bold"
+                  color="#00f0ff"
+                >
+                  {CHROMATIC_NOTES.map(n => <option key={n} value={n} className="bg-[#0a0b10]">{n}</option>)}
+                </WakandanSelect>
+              </div>
 
-          <div className="flex flex-col items-center">
-            <span className={hudLabelClass}>Snap</span>
-            <button 
-              onClick={() => setMusicState({ snapToScale: !snapToScale })}
-              className={`${hudValueClass} w-10 ${snapToScale ? 'text-[#00f0ff]' : 'text-[#6E7C9C]'}`}
-            >
-              {snapToScale ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          
+              <div className="flex flex-col items-center">
+                <span className={hudLabelClass}>Scale</span>
+                <WakandanSelect 
+                  value={currentScale}
+                  onChange={(e) => setMusicState({ currentScale: e.target.value })}
+                  className="text-[12px] font-bold"
+                  color="#9D4EDD"
+                >
+                  <option value="Major" className="bg-[#0a0b10]">Major</option>
+                  <option value="Minor" className="bg-[#0a0b10]">Minor</option>
+                  <option value="PentatonicMajor" className="bg-[#0a0b10]">Pentatonic</option>
+                  <option value="Blues" className="bg-[#0a0b10]">Blues</option>
+                </WakandanSelect>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <span className={hudLabelClass}>Snap</span>
+                <button 
+                  onClick={() => setMusicState({ snapToScale: !snapToScale })}
+                  className={`${hudValueClass} w-10 ${snapToScale ? 'text-[#00f0ff]' : 'text-[#6E7C9C]'}`}
+                >
+                  {snapToScale ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {mode === 'Song' && <SongTransportControls />}
+
           <div className="flex flex-col items-center mt-1">
             <span className={hudLabelClass}>Mode</span>
             <WakandanSelect
               value={mode}
-              onChange={(e) => setMusicState({ mode: e.target.value as 'Melody' | 'Chord' })}
+              onChange={(e) => setMusicState({ mode: e.target.value as 'Melody' | 'Chord' | 'Song' })}
               className="text-[12px] font-bold"
               color="#9D4EDD"
             >
               <option value="Melody" className="bg-[#0a0b10]">Melody</option>
               <option value="Chord" className="bg-[#0a0b10]">Chord</option>
+              <option value="Song" className="bg-[#0a0b10]">Song</option>
             </WakandanSelect>
           </div>
           

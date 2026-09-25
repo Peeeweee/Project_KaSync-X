@@ -3,6 +3,7 @@ import { CameraFeed } from './components/CameraFeed';
 import { CanvasOverlay } from './components/CanvasOverlay';
 import { RootWheel } from './components/RootWheel';
 import { QualityWheel } from './components/QualityWheel';
+import { SongPalette } from './components/SongPalette';
 import { TransportBar } from './components/TransportBar';
 import { Visualizer } from './components/Visualizer';
 import { MixerPanel } from './components/MixerPanel';
@@ -13,6 +14,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { looperService } from './looper/recorder';
 import { useHandStore } from './store/handState';
 import { useMusicStore, INSTRUMENT_ORDER } from './store/musicState';
+import { useSongStore } from './store/songStore';
 import { buildChord } from './music/chords';
 import { formatChordName } from './music/enharmonics';
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
@@ -31,6 +33,12 @@ function App() {
   const currentKey = useMusicStore(state => state.currentKey);
   const hands = useHandStore(state => state.smoothedHands);
 
+  // Song Mode reactive state (needed for HUD display key resolution)
+  const activeSongId = useSongStore(state => state.activeSongId);
+  const activeSectionIndex = useSongStore(state => state.activeSectionIndex);
+  const songSections = useSongStore(state => state.songs.find(s => s.id === state.activeSongId)?.sections);
+  const songDefaultKey = useSongStore(state => state.songs.find(s => s.id === state.activeSongId)?.defaultKey);
+
   // ── Hand-gesture instrument switching ──
   useInstrumentGesture();
 
@@ -45,6 +53,21 @@ function App() {
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
       const store = useMusicStore.getState();
+      const songStore = useSongStore.getState();
+
+      // Song Mode section navigation
+      if (store.mode === 'Song') {
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          songStore.nextSection();
+          return;
+        }
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          songStore.prevSection();
+          return;
+        }
+      }
 
       // Keys 1–4: direct instrument pick
       const directMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3 };
@@ -108,6 +131,25 @@ function App() {
           useMusicStore.getState().setMusicState({ playingNotes: [] });
         }
       }
+    } else if (mode === 'Song') {
+      const hand = hands[0];
+      if (hand?.isPinching && hoveredRoot && hoveredQuality) {
+        const chordNotes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
+        const chordKey = chordNotes.join(',');
+        
+        if (chordKey !== lastChordKeyRef.current) {
+          lastChordKeyRef.current = chordKey;
+          looperService.triggerChord(chordNotes, hand.pinchStrength);
+          useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
+        }
+      } else {
+        if (lastChordKeyRef.current !== '') {
+          lastChordKeyRef.current = '';
+          const noHandsOnScreen = hands.length === 0;
+          looperService.releaseChord(noHandsOnScreen);
+          useMusicStore.getState().setMusicState({ playingNotes: [] });
+        }
+      }
     } else {
       const hand = hands[0];
       if (hand?.isPinching && hoveredRoot) {
@@ -135,12 +177,16 @@ function App() {
     let text = 'OFF';
     let playing = false;
 
-    if (mode === 'Chord') {
+    if (mode === 'Chord' || mode === 'Song') {
       const isLeftPinching = hands[0]?.isPinching ?? false;
       const rightPinching  = hands[1]?.isPinching ?? false;
-      playing = !!(isLeftPinching && rightPinching);
+      playing = mode === 'Song' ? !!hands[0]?.isPinching : !!(isLeftPinching && rightPinching);
       if (hoveredRoot && hoveredQuality) {
-        text = formatChordName(hoveredRoot, hoveredQuality, hoveredBass, currentKey);
+        // Reactively resolve the key: Song Mode uses its section key
+        const keyToUse = mode === 'Song'
+          ? (songSections?.[activeSectionIndex]?.key ?? songDefaultKey ?? currentKey)
+          : currentKey;
+        text = formatChordName(hoveredRoot, hoveredQuality, hoveredBass, keyToUse);
       } else if (hoveredRoot) {
         text = formatChordName(hoveredRoot, '', hoveredBass, currentKey);
       }
@@ -151,7 +197,7 @@ function App() {
       }
     }
     return { displayText: text, isPlaying: playing };
-  }, [mode, hands, hoveredRoot, hoveredQuality, hoveredBass, currentKey]);
+  }, [mode, hands, hoveredRoot, hoveredQuality, hoveredBass, currentKey, activeSectionIndex, songSections, songDefaultKey]);
 
   return (
     <div className="relative flex h-screen w-full items-center justify-center bg-[var(--color-bg)] overflow-hidden">
@@ -166,6 +212,7 @@ function App() {
         <>
           <RootWheel />
           <QualityWheel />
+          <SongPalette />
         </>
       )}
 
@@ -176,10 +223,14 @@ function App() {
       >
         <div className="relative w-48 h-48 flex items-center justify-center">
           
-          {/* Animated decorative outer rings — will-change promotes to compositor layer */}
-          <div className="absolute inset-0 rounded-full border-2 border-dashed border-[var(--color-primary-glow)] opacity-30 animate-spin-slow" style={{ willChange: 'transform' }}></div>
-          <div className="absolute inset-1.5 rounded-full border-[1px] border-[var(--color-secondary)] opacity-40 animate-[spin_12s_linear_infinite_reverse]" style={{ willChange: 'transform' }}></div>
-          <div className="absolute inset-4 rounded-full border-2 border-transparent border-t-[var(--color-primary)] border-b-[var(--color-primary)] opacity-40 animate-[spin_4s_ease-in-out_infinite_alternate]" style={{ willChange: 'transform' }}></div>
+          {/* Animated decorative outer rings — hide in Song Mode to not clash with palette */}
+          {mode !== 'Song' && (
+            <>
+              <div className="absolute inset-0 rounded-full border-2 border-dashed border-[var(--color-primary-glow)] opacity-30 animate-spin-slow" style={{ willChange: 'transform' }}></div>
+              <div className="absolute inset-1.5 rounded-full border-[1px] border-[var(--color-secondary)] opacity-40 animate-[spin_12s_linear_infinite_reverse]" style={{ willChange: 'transform' }}></div>
+              <div className="absolute inset-4 rounded-full border-2 border-transparent border-t-[var(--color-primary)] border-b-[var(--color-primary)] opacity-40 animate-[spin_4s_ease-in-out_infinite_alternate]" style={{ willChange: 'transform' }}></div>
+            </>
+          )}
           
           {/* Main Core */}
           <div className="absolute inset-6 rounded-full bg-black/70 backdrop-blur-xl shadow-[0_0_30px_rgba(157,78,221,0.3)] border border-[var(--color-metal)] flex items-center justify-center overflow-hidden">

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type InstrumentMode = 'Melody' | 'Chord';
+export type InstrumentMode = 'Melody' | 'Chord' | 'Song';
 export type InstrumentType = 'Subtractive' | 'FM' | 'Electric Piano' | 'Pad';
 
 /** Canonical order for keyboard (1-4) and gesture cycling. */
