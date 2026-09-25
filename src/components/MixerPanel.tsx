@@ -4,12 +4,14 @@ import type { InstrumentType } from '../store/musicState';
 import { exportMIDI } from '../looper/midiExport';
 import { exportAudioWav } from '../looper/audioExport';
 import { WakandanSelect } from './WakandanSelect';
+import { useMidiStore } from '../midi/midiManager';
 
 const INSTRUMENTS: InstrumentType[] = ['Subtractive', 'FM', 'Electric Piano', 'Pad'];
 
 export function MixerPanel() {
   const { tracks, setTrackProperty, armTrack, isGlobalRecording, bpm } = useLooperStore();
   const [isExportingWav, setIsExportingWav] = useState(false);
+  const { isPanelOpen, togglePanel } = useMidiStore();
 
   const handleExportMidi = () => {
     exportMIDI(tracks, bpm);
@@ -51,6 +53,18 @@ export function MixerPanel() {
             ) : (
               'WAV'
             )}
+          </button>
+          {/* MIDI Config toggle */}
+          <button
+            onClick={togglePanel}
+            title="MIDI I/O Settings"
+            className={`w-[26px] h-[18px] text-[9px] flex items-center justify-center rounded transition-all ${
+              isPanelOpen
+                ? 'bg-[#00f0ff]/15 text-[#00f0ff] border border-[#00f0ff]/40 shadow-[0_0_8px_rgba(0,240,255,0.3)]'
+                : 'bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white'
+            }`}
+          >
+            ⚡
           </button>
         </div>
       </div>
