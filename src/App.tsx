@@ -13,6 +13,7 @@ import { TutorialOverlay } from './components/TutorialOverlay';
 import { MidiPanel } from './components/MidiPanel';
 import { ToastContainer } from './components/ToastContainer';
 import { looperService } from './looper/recorder';
+import { useLooperStore } from './store/looperState';
 import { useHandStore } from './store/handState';
 import { useMusicStore, INSTRUMENT_ORDER } from './store/musicState';
 import { useSongStore } from './store/songStore';
@@ -32,6 +33,7 @@ function App() {
   const hoveredQuality = useMusicStore(state => state.hoveredQuality);
   const hoveredBass = useMusicStore(state => state.hoveredBass);
   const currentKey = useMusicStore(state => state.currentKey);
+  const hoveredEffect = useMusicStore(state => state.hoveredEffect);
   const hands = useHandStore(state => state.smoothedHands);
 
   // Song Mode reactive state (needed for HUD display key resolution)
@@ -95,6 +97,9 @@ function App() {
   }, []);
 
   const lastChordKeyRef = useRef<string>('');
+  const lastFxPinchRef = useRef<boolean>(false);
+  const armedTrack = useLooperStore(state => state.tracks.find(t => t.isArmed));
+  const setTrackProperty = useLooperStore(state => state.setTrackProperty);
 
   // Master fade out when hands leave
   useEffect(() => {
@@ -133,23 +138,16 @@ function App() {
         }
       }
     } else if (mode === 'Song') {
-      // Song Mode uses DUAL-HAND pinch — same feel as Chord mode
-      const isLeftPinching  = hands[0]?.isPinching ?? false;
-      const isRightPinching = hands[1]?.isPinching ?? false;
-      // Also allow single hand if only one hand detected
-      const isPinching = (hands.length >= 2)
-        ? (isLeftPinching && isRightPinching)
-        : !!(hands[0]?.isPinching);
+      // LEFT HAND: Chords
+      const handLeft = hands[0];
+      const isLeftPinching = handLeft?.isPinching ?? false;
 
-      if (isPinching && hoveredRoot && hoveredQuality) {
+      if (isLeftPinching && hoveredRoot && hoveredQuality) {
         const chordNotes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
         const chordKey = chordNotes.join(',');
         if (chordKey !== lastChordKeyRef.current) {
           lastChordKeyRef.current = chordKey;
-          const velocity = hands.length >= 2
-            ? Math.max(hands[0]!.pinchStrength, hands[1]!.pinchStrength)
-            : (hands[0]?.pinchStrength ?? 0.7);
-          looperService.triggerChord(chordNotes, velocity);
+          looperService.triggerChord(chordNotes, handLeft!.pinchStrength);
           useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
         }
       } else {
@@ -158,6 +156,23 @@ function App() {
           looperService.releaseChord(hands.length === 0);
           useMusicStore.getState().setMusicState({ playingNotes: [] });
         }
+      }
+
+      // RIGHT HAND: Effects toggle
+      const handRight = hands[1];
+      const isRightPinching = handRight?.isPinching ?? false;
+
+      if (isRightPinching && hoveredEffect && !lastFxPinchRef.current) {
+        // Just transitioned into a pinch on an effect slice
+        lastFxPinchRef.current = true;
+        if (armedTrack) {
+          setTrackProperty(armedTrack.id, 'effects', {
+            ...armedTrack.effects,
+            [hoveredEffect]: !armedTrack.effects[hoveredEffect]
+          });
+        }
+      } else if (!isRightPinching) {
+        lastFxPinchRef.current = false;
       }
     } else {
       const hand = hands[0];
@@ -190,9 +205,8 @@ function App() {
       const isLeftPinching = hands[0]?.isPinching ?? false;
       const isRightPinching = hands[1]?.isPinching ?? false;
       const dualPlay = isLeftPinching && isRightPinching;
-      const singlePlay = !!hands[0]?.isPinching;
       playing = mode === 'Song'
-        ? (hands.length >= 2 ? dualPlay : singlePlay)
+        ? isLeftPinching // In song mode, left hand alone plays the chord
         : dualPlay;
       if (hoveredRoot && hoveredQuality) {
         // Reactively resolve the key: Song Mode uses its section key

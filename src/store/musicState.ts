@@ -11,6 +11,7 @@ export interface EffectsState {
   delay: boolean;
   chorus: boolean;
   bitcrusher: boolean;
+  sustain: boolean;
 }
 
 interface MusicState {
@@ -27,6 +28,7 @@ interface MusicState {
   hoveredRoot: string | null;
   hoveredQuality: string | null;
   hoveredBass: string | null;
+  hoveredEffect: keyof EffectsState | null;
   playingNotes: string[];
   setMusicState: (partial: Partial<MusicState>) => void;
   cycleInstrument: (dir: 1 | -1) => void;
@@ -51,6 +53,7 @@ export const useMusicStore = create<MusicState>((set) => ({
   hoveredRoot: null,
   hoveredQuality: null,
   hoveredBass: null,
+  hoveredEffect: null,
   playingNotes: [],
   setMusicState: (partial) => set((state) => ({ ...state, ...partial })),
   cycleInstrument: (dir) =>

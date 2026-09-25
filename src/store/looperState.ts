@@ -22,6 +22,7 @@ const DEFAULT_EFFECTS: EffectsState = {
   delay: false,
   chorus: false,
   bitcrusher: false,
+  sustain: false,
 };
 
 const INITIAL_TRACKS: Track[] = Array.from({ length: 6 }).map((_, i) => ({
