@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import { useLooperStore } from '../store/looperState';
 import { TrackAudioLayer } from '../audio/trackAudioLayer';
 import { InstrumentService } from '../audio/synth';
+import { midiManager } from '../midi/midiManager';
 
 export class LooperService {
   private trackLayers: Record<number, TrackAudioLayer> = {};
@@ -115,6 +116,7 @@ export class LooperService {
         const notesToRelease = this.liveCurrentNotes.filter(n => !notes.includes(n));
         if (notesToRelease.length > 0) {
           layer.triggerRelease(notesToRelease);
+          midiManager.sendNoteOff(notesToRelease);        // MIDI Output
         }
         
         // Finish recording the old held notes segment
@@ -137,6 +139,7 @@ export class LooperService {
       
       if (attackTarget.length > 0) {
         layer.triggerAttack(attackTarget, velocity);
+        midiManager.sendNoteOn(attackTarget, velocity);   // MIDI Output
       }
       
       this.liveCurrentNotes = [...notes];
@@ -161,6 +164,7 @@ export class LooperService {
     const armedId = this.getArmedTrackId();
     if (armedId !== null && this.liveCurrentNotes.length > 0) {
       this.trackLayers[armedId].triggerRelease(this.liveCurrentNotes);
+      midiManager.sendNoteOff(this.liveCurrentNotes);   // MIDI Output
       
       // If we were recording this note, finish it and add to store
       if (this.liveHeldNotes) {
