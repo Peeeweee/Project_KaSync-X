@@ -237,9 +237,13 @@ function App() {
       
       {audioStarted && (
         <>
-          <RootWheel />
-          <QualityWheel />
-          <SongPalette />
+          {mode !== 'Song' && (
+            <>
+              <RootWheel />
+              <QualityWheel />
+            </>
+          )}
+          {mode === 'Song' && <SongPalette />}
           <SongPanel />
         </>
       )}

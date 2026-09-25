@@ -173,15 +173,21 @@ function ChordWheel({
     if (activeSection && hoveredIndex !== null) {
       const chord = activeSection.chords[hoveredIndex];
       if (chord) {
-        setMusicState({
-          hoveredRoot: chord.root,
-          hoveredQuality: chord.quality,
-          hoveredBass: chord.bass ?? null,
+        setMusicState(prev => {
+          if (prev.hoveredRoot === chord.root && prev.hoveredQuality === chord.quality && prev.hoveredBass === (chord.bass ?? null)) return prev;
+          return {
+            hoveredRoot: chord.root,
+            hoveredQuality: chord.quality,
+            hoveredBass: chord.bass ?? null,
+          };
         });
         return;
       }
     }
-    setMusicState({ hoveredRoot: null, hoveredQuality: null, hoveredBass: null });
+    setMusicState(prev => {
+      if (prev.hoveredRoot === null && prev.hoveredQuality === null && prev.hoveredBass === null) return prev;
+      return { hoveredRoot: null, hoveredQuality: null, hoveredBass: null };
+    });
   }, [hoveredIndex, activeSection, setMusicState]);
 
   const chords = activeSection?.chords ?? [];
@@ -199,7 +205,7 @@ function ChordWheel({
         transition: 'transform 0.08s ease-out',
       }}
     >
-      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[420px] max-h-[420px]">
         <circle
           cx={CENTER} cy={CENTER} r={OUTER_R + 14}
           fill="none" stroke={sectionColor} strokeWidth="0.5" opacity="0.25" strokeDasharray="6 10"
@@ -329,9 +335,9 @@ function FxWheel() {
     prevHoveredRef.current = hoveredIndex;
 
     if (hoveredIndex !== null) {
-      setMusicState({ hoveredEffect: FX_LIST[hoveredIndex].id });
+      setMusicState(prev => prev.hoveredEffect === FX_LIST[hoveredIndex].id ? prev : { hoveredEffect: FX_LIST[hoveredIndex].id });
     } else {
-      setMusicState({ hoveredEffect: null });
+      setMusicState(prev => prev.hoveredEffect === null ? prev : { hoveredEffect: null });
     }
   }, [hoveredIndex, setMusicState]);
 
@@ -348,7 +354,7 @@ function FxWheel() {
         transition: 'transform 0.08s ease-out',
       }}
     >
-      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[420px] max-h-[420px]">
         <circle
           cx={CENTER} cy={CENTER} r={OUTER_R + 14}
           fill="none" stroke="#6E7C9C" strokeWidth="0.5" opacity="0.25" strokeDasharray="6 10"

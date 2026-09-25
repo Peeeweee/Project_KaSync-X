@@ -109,7 +109,7 @@ export function QualityWheel() {
         transform: `translate(calc(50% + ${parallax.x}px), calc(-50% + ${parallax.y}px))`
       }}
     >
-      <svg ref={svgRef} width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+      <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[460px] max-h-[460px]">
         {/* Holographic Concentric Rings */}
         <g style={{ transformOrigin: 'center' }} className="animate-spin-slow opacity-40">
           <circle cx={CENTER} cy={CENTER} r={EXTENDED_RADIUS + 15} fill="none" stroke="var(--color-secondary)" strokeWidth="1.5" strokeDasharray="4 12" />
