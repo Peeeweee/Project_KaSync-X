@@ -6,13 +6,18 @@ import { QualityWheel } from './components/QualityWheel';
 import { TransportBar } from './components/TransportBar';
 import { Visualizer } from './components/Visualizer';
 import { MixerPanel } from './components/MixerPanel';
+import { InstrumentPanel } from './components/InstrumentPanel';
 import { TutorialOverlay } from './components/TutorialOverlay';
+import { MidiPanel } from './components/MidiPanel';
+import { ToastContainer } from './components/ToastContainer';
 import { looperService } from './looper/recorder';
 import { useHandStore } from './store/handState';
-import { useMusicStore } from './store/musicState';
+import { useMusicStore, INSTRUMENT_ORDER } from './store/musicState';
 import { buildChord } from './music/chords';
 import { formatChordName } from './music/enharmonics';
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
+import { useInstrumentGesture } from './hooks/useInstrumentGesture';
+import { useMidi } from './hooks/useMidi';
 import './index.css';
 
 function App() {
@@ -25,6 +30,40 @@ function App() {
   const hoveredBass = useMusicStore(state => state.hoveredBass);
   const currentKey = useMusicStore(state => state.currentKey);
   const hands = useHandStore(state => state.smoothedHands);
+
+  // ── Hand-gesture instrument switching ──
+  useInstrumentGesture();
+
+  // ── MIDI (input, output, clock, learn) ──
+  useMidi();
+
+  // ── Keyboard instrument switching ──
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing in an input / select / textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+      const store = useMusicStore.getState();
+
+      // Keys 1–4: direct instrument pick
+      const directMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3 };
+      if (e.key in directMap) {
+        e.preventDefault();
+        store.setMusicState({ currentInstrument: INSTRUMENT_ORDER[directMap[e.key]] });
+        return;
+      }
+
+      // Tab / Shift+Tab: cycle
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        store.cycleInstrument(e.shiftKey ? -1 : 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleStartAudio = useCallback(async () => {
     await looperService.startAudioContext();
@@ -121,6 +160,7 @@ function App() {
       <TransportBar />
       <Visualizer />
       <MixerPanel />
+      <InstrumentPanel />
       
       {audioStarted && (
         <>
@@ -201,6 +241,8 @@ function App() {
       </div>
       
       <TutorialOverlay />
+      <MidiPanel />
+      <ToastContainer />
     </div>
   );
 }
