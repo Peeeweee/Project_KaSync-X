@@ -3,6 +3,9 @@ import { create } from 'zustand';
 export type InstrumentMode = 'Melody' | 'Chord';
 export type InstrumentType = 'Subtractive' | 'FM' | 'Electric Piano' | 'Pad';
 
+/** Canonical order for keyboard (1-4) and gesture cycling. */
+export const INSTRUMENT_ORDER: InstrumentType[] = ['Subtractive', 'FM', 'Electric Piano', 'Pad'];
+
 export interface EffectsState {
   reverb: boolean;
   delay: boolean;
@@ -26,6 +29,7 @@ interface MusicState {
   hoveredBass: string | null;
   playingNotes: string[];
   setMusicState: (partial: Partial<MusicState>) => void;
+  cycleInstrument: (dir: 1 | -1) => void;
 }
 
 export const useMusicStore = create<MusicState>((set) => ({
@@ -49,4 +53,11 @@ export const useMusicStore = create<MusicState>((set) => ({
   hoveredBass: null,
   playingNotes: [],
   setMusicState: (partial) => set((state) => ({ ...state, ...partial })),
+  cycleInstrument: (dir) =>
+    set((state) => {
+      const idx = INSTRUMENT_ORDER.indexOf(state.currentInstrument);
+      const next =
+        INSTRUMENT_ORDER[(idx + dir + INSTRUMENT_ORDER.length) % INSTRUMENT_ORDER.length];
+      return { ...state, currentInstrument: next };
+    }),
 }));
