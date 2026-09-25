@@ -1,12 +1,13 @@
 import * as Tone from 'tone';
 import type { Track } from './trackModel';
 import { TrackAudioLayer } from '../audio/trackAudioLayer';
+import { toast } from '../store/toastStore';
 
 export async function exportAudioWav(tracks: Track[], bpm: number): Promise<void> {
   const activeTracks = tracks.filter(t => t.events.length > 0 && !t.isMuted);
   
   if (activeTracks.length === 0) {
-    alert("No active tracks with recorded events to export.");
+    toast.warning('No recorded events to export. Hit ● Record + ▶ Play and perform first.');
     return;
   }
 
@@ -46,15 +47,16 @@ export async function exportAudioWav(tracks: Track[], bpm: number): Promise<void
     const url = URL.createObjectURL(wavBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'kasync_session.wav';
+    a.download = `kasync_session_${new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')}.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    toast.success(`Exported ${activeTracks.length} track${activeTracks.length > 1 ? 's' : ''} as WAV.`);
     
   } catch (error) {
     console.error("Export failed:", error);
-    alert("Failed to render audio.");
+    toast.error('WAV render failed — check the console for details.');
   }
 }
 
