@@ -18,7 +18,7 @@ function SongTransportControls() {
   const total = activeSong?.sections.length ?? 0;
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       <button
         onClick={prevSection}
         disabled={activeSectionIndex === 0}
@@ -43,6 +43,13 @@ function SongTransportControls() {
         className="w-7 h-7 rounded-full border border-white/10 flex items-center justify-center text-xs text-[#6E7C9C] hover:text-white hover:border-white/30 disabled:opacity-20 transition-all"
       >
         ›
+      </button>
+      <button
+        onClick={() => useSongStore.getState().toggleSongPanel()}
+        className="w-7 h-7 rounded-full border border-white/10 flex items-center justify-center text-[10px] text-[#6E7C9C] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)]/40 transition-all"
+        title="Song Architect"
+      >
+        ♪
       </button>
     </div>
   );

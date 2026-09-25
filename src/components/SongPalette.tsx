@@ -90,11 +90,17 @@ function SongHUD({
         })}
       </div>
 
-      {/* Keyboard hint */}
-      <div className="text-center mt-2 opacity-30">
-        <span className="text-[8px] tracking-widest text-white font-mono">
-          ← → ARROW KEYS TO NAVIGATE
+      {/* Keyboard hint + Edit button */}
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-[8px] tracking-widest text-white font-mono opacity-20">
+          ← → ARROW KEYS
         </span>
+        <button
+          className="pointer-events-auto text-[8px] tracking-[0.25em] uppercase px-2 py-1 rounded border border-white/10 text-[#6E7C9C] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)]/40 transition-all"
+          onClick={e => { e.stopPropagation(); useSongStore.getState().toggleSongPanel(); }}
+        >
+          ✏️ Edit Song
+        </button>
       </div>
     </div>
   );

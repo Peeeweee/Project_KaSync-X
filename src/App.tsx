@@ -4,6 +4,7 @@ import { CanvasOverlay } from './components/CanvasOverlay';
 import { RootWheel } from './components/RootWheel';
 import { QualityWheel } from './components/QualityWheel';
 import { SongPalette } from './components/SongPalette';
+import { SongPanel } from './components/SongPanel';
 import { TransportBar } from './components/TransportBar';
 import { Visualizer } from './components/Visualizer';
 import { MixerPanel } from './components/MixerPanel';
@@ -132,21 +133,29 @@ function App() {
         }
       }
     } else if (mode === 'Song') {
-      const hand = hands[0];
-      if (hand?.isPinching && hoveredRoot && hoveredQuality) {
+      // Song Mode uses DUAL-HAND pinch — same feel as Chord mode
+      const isLeftPinching  = hands[0]?.isPinching ?? false;
+      const isRightPinching = hands[1]?.isPinching ?? false;
+      // Also allow single hand if only one hand detected
+      const isPinching = (hands.length >= 2)
+        ? (isLeftPinching && isRightPinching)
+        : !!(hands[0]?.isPinching);
+
+      if (isPinching && hoveredRoot && hoveredQuality) {
         const chordNotes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
         const chordKey = chordNotes.join(',');
-        
         if (chordKey !== lastChordKeyRef.current) {
           lastChordKeyRef.current = chordKey;
-          looperService.triggerChord(chordNotes, hand.pinchStrength);
+          const velocity = hands.length >= 2
+            ? Math.max(hands[0]!.pinchStrength, hands[1]!.pinchStrength)
+            : (hands[0]?.pinchStrength ?? 0.7);
+          looperService.triggerChord(chordNotes, velocity);
           useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
         }
       } else {
         if (lastChordKeyRef.current !== '') {
           lastChordKeyRef.current = '';
-          const noHandsOnScreen = hands.length === 0;
-          looperService.releaseChord(noHandsOnScreen);
+          looperService.releaseChord(hands.length === 0);
           useMusicStore.getState().setMusicState({ playingNotes: [] });
         }
       }
@@ -179,8 +188,12 @@ function App() {
 
     if (mode === 'Chord' || mode === 'Song') {
       const isLeftPinching = hands[0]?.isPinching ?? false;
-      const rightPinching  = hands[1]?.isPinching ?? false;
-      playing = mode === 'Song' ? !!hands[0]?.isPinching : !!(isLeftPinching && rightPinching);
+      const isRightPinching = hands[1]?.isPinching ?? false;
+      const dualPlay = isLeftPinching && isRightPinching;
+      const singlePlay = !!hands[0]?.isPinching;
+      playing = mode === 'Song'
+        ? (hands.length >= 2 ? dualPlay : singlePlay)
+        : dualPlay;
       if (hoveredRoot && hoveredQuality) {
         // Reactively resolve the key: Song Mode uses its section key
         const keyToUse = mode === 'Song'
@@ -213,6 +226,7 @@ function App() {
           <RootWheel />
           <QualityWheel />
           <SongPalette />
+          <SongPanel />
         </>
       )}
 
