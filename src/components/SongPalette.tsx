@@ -254,29 +254,65 @@ export function SongPalette() {
             opacity="0.6"
           />
 
-          {/* Section name in inner hub */}
-          <text
-            x={CENTER} y={CENTER - 8}
-            textAnchor="middle"
-            fill={sectionColor}
-            fontSize="10"
-            fontWeight="bold"
-            letterSpacing="3"
-            opacity="0.9"
-            style={{ fontFamily: 'var(--font-ui, monospace)' }}
-          >
-            {activeSection.name.toUpperCase()}
-          </text>
-          {activeSection.key && (
+          {/* Inner hub: section name + optional key-change badge */}
+          {/* Dark hub circle */}
+          <circle
+            cx={CENTER} cy={CENTER} r={INNER_R - 2}
+            fill="rgba(3,3,8,0.95)"
+          />
+
+          {activeSection.key ? (
+            /* Key change layout: name on top, ↕ divider, KEY badge */
+            <>
+              <text
+                x={CENTER} y={CENTER - 10}
+                textAnchor="middle"
+                fill={sectionColor}
+                fontSize="9"
+                fontWeight="bold"
+                letterSpacing="3"
+                opacity="0.95"
+              >
+                {activeSection.name.toUpperCase()}
+              </text>
+              {/* thin divider line */}
+              <line
+                x1={CENTER - 20} y1={CENTER - 1}
+                x2={CENTER + 20} y2={CENTER - 1}
+                stroke={sectionColor} strokeWidth="0.5" opacity="0.3"
+              />
+              {/* KEY CHANGE badge */}
+              <rect
+                x={CENTER - 22} y={CENTER + 4}
+                width={44} height={14}
+                rx={7}
+                fill="#F9A82622"
+                stroke="#F9A826"
+                strokeWidth="0.8"
+              />
+              <text
+                x={CENTER} y={CENTER + 12}
+                textAnchor="middle"
+                fill="#F9A826"
+                fontSize="8"
+                fontWeight="bold"
+                letterSpacing="1.5"
+              >
+                ♪ KEY {activeSection.key}
+              </text>
+            </>
+          ) : (
+            /* Normal layout: just section name centered */
             <text
-              x={CENTER} y={CENTER + 10}
+              x={CENTER} y={CENTER + 4}
               textAnchor="middle"
-              fill="#F9A826"
-              fontSize="9"
-              letterSpacing="2"
-              opacity="0.8"
+              fill={sectionColor}
+              fontSize="10"
+              fontWeight="bold"
+              letterSpacing="3"
+              opacity="0.9"
             >
-              KEY: {activeSection.key}
+              {activeSection.name.toUpperCase()}
             </text>
           )}
 
@@ -285,15 +321,16 @@ export function SongPalette() {
             {chords.map((chord, index) => {
               const isActive = index === hoveredIndex;
 
-              // Angles: 0 = right in SVG. We want index 0 at top (-90°).
-              // Wedge for index `i` spans from startDeg to endDeg.
-              const startDeg = index * sliceDeg - 90 + GAP_DEG / 2;
-              const endDeg = (index + 1) * sliceDeg - 90 - GAP_DEG / 2;
+              // FIX: subtract sliceDeg/2 so index 0 is CENTERED at top (12 o'clock).
+              // This aligns visual wedge positions with the hand-angle selection math,
+              // which uses `angle + sliceAngle/2` to make index 0 activate at angle=0 (top).
+              const startDeg = index * sliceDeg - 90 - sliceDeg / 2 + GAP_DEG / 2;
+              const endDeg = (index + 1) * sliceDeg - 90 - sliceDeg / 2 - GAP_DEG / 2;
 
               const pathD = makeWedgePath(INNER_R, OUTER_R, startDeg, endDeg);
 
-              // Text position: midpoint angle, midpoint radius
-              const midDeg = index * sliceDeg - 90 + sliceDeg / 2;
+              // Text at midpoint of the wedge arc
+              const midDeg = index * sliceDeg - 90; // index 0 → -90° → top (cos=-0, sin=-1)
               const midRad = (midDeg * Math.PI) / 180;
               const midR = (INNER_R + OUTER_R) / 2;
               const tx = midR * Math.cos(midRad);
