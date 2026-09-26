@@ -42,7 +42,7 @@ export const useMusicStore = create<MusicState>((set) => ({
   showExtendedQualities: false,
   currentInstrument: 'Subtractive',
   effects: {
-    reverb: true,
+    reverb: false,
     delay: false,
     chorus: false,
     bitcrusher: false

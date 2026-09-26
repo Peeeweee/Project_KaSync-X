@@ -16,8 +16,8 @@ import type { InstrumentType, EffectsState } from '../store/musicState';
 //  fail to fire cleanly. No orphaned voices. Ever.
 // ─────────────────────────────────────────────────────────────
 
-const HOLD_DURATION    = 0.6;   // seconds each TAR burst is held
-const RENEW_INTERVAL_MS = 400;  // ms between renewals (must be < HOLD_DURATION * 1000)
+const HOLD_DURATION     = 0.38;  // seconds each TAR burst is held
+const RENEW_INTERVAL_MS = 320;   // ms between renewals — 40ms gap prevents double-amplitude noise
 
 export class InstrumentService {
   private synth: Tone.PolySynth;
@@ -38,7 +38,7 @@ export class InstrumentService {
   private watchdogInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    this.limiter = new Tone.Limiter(-6).toDestination();
+    this.limiter = new Tone.Limiter(-12).toDestination(); // -12dBFS ceiling keeps peaks clean
 
     // Initialize Effects
     this.chorus     = new Tone.Chorus(4, 2.5, 0.4).start();
@@ -123,7 +123,7 @@ export class InstrumentService {
         break;
     }
     this.holdDuration = holdDuration;
-    synth.volume.value = -10;
+    synth.volume.value = -16; // Lower master gain — less distortion when multiple notes play
     synth.connect(this.chorus);
     return synth;
   }

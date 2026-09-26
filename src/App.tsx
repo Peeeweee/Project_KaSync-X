@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CameraFeed } from './components/CameraFeed';
 import { CanvasOverlay } from './components/CanvasOverlay';
 import { RootWheel } from './components/RootWheel';
@@ -13,14 +13,13 @@ import { TutorialOverlay } from './components/TutorialOverlay';
 import { MidiPanel } from './components/MidiPanel';
 import { ToastContainer } from './components/ToastContainer';
 import { looperService } from './looper/recorder';
-import { useLooperStore } from './store/looperState';
 import { useHandStore } from './store/handState';
 import { useMusicStore, INSTRUMENT_ORDER } from './store/musicState';
 import { useSongStore } from './store/songStore';
-import { buildChord } from './music/chords';
 import { formatChordName } from './music/enharmonics';
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { useInstrumentGesture } from './hooks/useInstrumentGesture';
+import { useAudioTrigger } from './hooks/useAudioTrigger';
 import { useMidi } from './hooks/useMidi';
 import './index.css';
 
@@ -96,11 +95,8 @@ function App() {
     setAudioStarted(true);
   }, []);
 
-  const lastChordKeyRef = useRef<string>('');
-  const releaseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastFxPinchRef = useRef<boolean>(false);
-  const armedTrack = useLooperStore(state => state.tracks.find(t => t.isArmed));
-  const setTrackProperty = useLooperStore(state => state.setTrackProperty);
+  // ── Audio trigger (direct store subscription — bypasses React render cycle) ──
+  useAudioTrigger(audioStarted);
 
   // Master fade out when hands leave
   useEffect(() => {
@@ -112,116 +108,7 @@ function App() {
     }
   }, [hands.length, audioStarted]);
 
-  useEffect(() => {
-    if (!audioStarted) return;
 
-    if (mode === 'Chord') {
-      const isLeftPinching = hands[0]?.isPinching ?? false;
-      const rightPinching = hands[1]?.isPinching ?? false;
-      
-      if (isLeftPinching && rightPinching && hoveredRoot && hoveredQuality) {
-        if (releaseTimeoutRef.current) {
-          clearTimeout(releaseTimeoutRef.current);
-          releaseTimeoutRef.current = null;
-        }
-        
-        const chordNotes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
-        const chordKey = chordNotes.join(',');
-        
-        // Only trigger audio if chord actually changed — prevents engine spam
-        if (chordKey !== lastChordKeyRef.current) {
-          lastChordKeyRef.current = chordKey;
-          const velocity = Math.max(hands[0]!.pinchStrength, hands[1]!.pinchStrength);
-          looperService.triggerChord(chordNotes, velocity);
-          useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
-        }
-      } else {
-        if (lastChordKeyRef.current !== '' && !releaseTimeoutRef.current) {
-          const noHandsOnScreen = hands.length === 0;
-          releaseTimeoutRef.current = setTimeout(() => {
-            lastChordKeyRef.current = '';
-            looperService.releaseChord(noHandsOnScreen);
-            useMusicStore.getState().setMusicState({ playingNotes: [] });
-            releaseTimeoutRef.current = null;
-          }, 80); // 80ms debounce for pinch jitter
-        }
-      }
-    } else if (mode === 'Song') {
-      const handLeft = hands[0];
-      const handRight = hands[1];
-      const isLeftPinching = handLeft?.isPinching ?? false;
-      const isRightPinching = handRight?.isPinching ?? false;
-
-      // LEFT HAND: pinch to play chord
-      if (isLeftPinching && hoveredRoot && hoveredQuality) {
-        if (releaseTimeoutRef.current) {
-          clearTimeout(releaseTimeoutRef.current);
-          releaseTimeoutRef.current = null;
-        }
-
-        const chordNotes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
-        const chordKey = chordNotes.join(',');
-        if (chordKey !== lastChordKeyRef.current) {
-          lastChordKeyRef.current = chordKey;
-          looperService.triggerChord(chordNotes, handLeft!.pinchStrength);
-          useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
-        }
-      } else {
-        if (lastChordKeyRef.current !== '' && !releaseTimeoutRef.current) {
-          const noHandsOnScreen = hands.length === 0;
-          releaseTimeoutRef.current = setTimeout(() => {
-            lastChordKeyRef.current = '';
-            looperService.releaseChord(noHandsOnScreen);
-            useMusicStore.getState().setMusicState({ playingNotes: [] });
-            releaseTimeoutRef.current = null;
-          }, 80);
-        }
-      }
-
-      // RIGHT HAND: Effects toggle (uses same handRight/isRightPinching declared above)
-
-      if (isRightPinching && hoveredEffect && !lastFxPinchRef.current) {
-        // Just transitioned into a pinch on an effect slice
-        lastFxPinchRef.current = true;
-        if (armedTrack) {
-          setTrackProperty(armedTrack.id, 'effects', {
-            ...armedTrack.effects,
-            [hoveredEffect]: !armedTrack.effects[hoveredEffect]
-          });
-        }
-      } else if (!isRightPinching) {
-        lastFxPinchRef.current = false;
-      }
-    } else {
-      const hand = hands[0];
-      if (hand?.isPinching && hoveredRoot) {
-        if (releaseTimeoutRef.current) {
-          clearTimeout(releaseTimeoutRef.current);
-          releaseTimeoutRef.current = null;
-        }
-
-        // Play root note with octave doubling for a fuller melody sound
-        const noteLow  = `${hoveredRoot}4`;
-        const noteHigh = `${hoveredRoot}5`;
-        const noteKey  = `${noteLow},${noteHigh}`;
-        if (lastChordKeyRef.current !== noteKey) {
-          lastChordKeyRef.current = noteKey;
-          looperService.triggerChord([noteLow, noteHigh], hand.pinchStrength);
-          useMusicStore.getState().setMusicState({ playingNotes: [noteLow, noteHigh] });
-        }
-      } else {
-        if (lastChordKeyRef.current !== '' && !releaseTimeoutRef.current) {
-          const noHandsOnScreen = hands.length === 0;
-          releaseTimeoutRef.current = setTimeout(() => {
-            lastChordKeyRef.current = '';
-            looperService.releaseNote(noHandsOnScreen);
-            useMusicStore.getState().setMusicState({ playingNotes: [] });
-            releaseTimeoutRef.current = null;
-          }, 80);
-        }
-      }
-    }
-  }, [hands, mode, hoveredRoot, hoveredQuality, hoveredBass, audioStarted]);
 
   const { displayText, isPlaying } = useMemo(() => {
     let text = 'OFF';
