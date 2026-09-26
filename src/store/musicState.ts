@@ -30,7 +30,7 @@ interface MusicState {
   hoveredBass: string | null;
   hoveredEffect: keyof EffectsState | null;
   playingNotes: string[];
-  setMusicState: (partial: Partial<MusicState>) => void;
+  setMusicState: (partial: Partial<MusicState> | ((prev: MusicState) => Partial<MusicState>)) => void;
   cycleInstrument: (dir: 1 | -1) => void;
 }
 
@@ -55,7 +55,11 @@ export const useMusicStore = create<MusicState>((set) => ({
   hoveredBass: null,
   hoveredEffect: null,
   playingNotes: [],
-  setMusicState: (partial) => set((state) => ({ ...state, ...partial })),
+  setMusicState: (partial) =>
+    set((state) => {
+      const update = typeof partial === 'function' ? partial(state) : partial;
+      return { ...state, ...update };
+    }),
   cycleInstrument: (dir) =>
     set((state) => {
       const idx = INSTRUMENT_ORDER.indexOf(state.currentInstrument);

@@ -131,7 +131,10 @@ export class InstrumentService {
   /** Fire a single TAR burst for the given notes. */
   private fireTAR(notes: string[], velocity: number) {
     if (Tone.context.state !== 'running') {
-      Tone.context.resume().catch(() => {});
+      // Resume and then fire — don't silently drop the note
+      Tone.context.resume().then(() => {
+        this.synth.triggerAttackRelease(notes, this.holdDuration, Tone.now(), velocity);
+      }).catch(() => {});
       return;
     }
     this.synth.triggerAttackRelease(notes, this.holdDuration, Tone.now(), velocity);
@@ -159,6 +162,16 @@ export class InstrumentService {
     if (Tone.context.state !== 'running') {
       await Tone.context.resume();
     }
+    // Keep context alive: resume on any subsequent user gesture.
+    // Browsers auto-suspend after ~1 minute of no interaction.
+    const resumeOnGesture = () => {
+      if (Tone.context.state !== 'running') {
+        Tone.context.resume().catch(() => {});
+      }
+    };
+    document.addEventListener('click',      resumeOnGesture);
+    document.addEventListener('touchstart', resumeOnGesture);
+    document.addEventListener('keydown',    resumeOnGesture);
   }
 
   private switchInstrument(newInstrument: InstrumentType) {
