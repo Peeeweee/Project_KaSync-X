@@ -97,6 +97,7 @@ function App() {
   }, []);
 
   const lastChordKeyRef = useRef<string>('');
+  const releaseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFxPinchRef = useRef<boolean>(false);
   const armedTrack = useLooperStore(state => state.tracks.find(t => t.isArmed));
   const setTrackProperty = useLooperStore(state => state.setTrackProperty);
@@ -119,6 +120,11 @@ function App() {
       const rightPinching = hands[1]?.isPinching ?? false;
       
       if (isLeftPinching && rightPinching && hoveredRoot && hoveredQuality) {
+        if (releaseTimeoutRef.current) {
+          clearTimeout(releaseTimeoutRef.current);
+          releaseTimeoutRef.current = null;
+        }
+        
         const chordNotes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
         const chordKey = chordNotes.join(',');
         
@@ -130,11 +136,14 @@ function App() {
           useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
         }
       } else {
-        if (lastChordKeyRef.current !== '') {
-          lastChordKeyRef.current = '';
+        if (lastChordKeyRef.current !== '' && !releaseTimeoutRef.current) {
           const noHandsOnScreen = hands.length === 0;
-          looperService.releaseChord(noHandsOnScreen);
-          useMusicStore.getState().setMusicState({ playingNotes: [] });
+          releaseTimeoutRef.current = setTimeout(() => {
+            lastChordKeyRef.current = '';
+            looperService.releaseChord(noHandsOnScreen);
+            useMusicStore.getState().setMusicState({ playingNotes: [] });
+            releaseTimeoutRef.current = null;
+          }, 80); // 80ms debounce for pinch jitter
         }
       }
     } else if (mode === 'Song') {
@@ -143,6 +152,11 @@ function App() {
       const isLeftPinching = handLeft?.isPinching ?? false;
 
       if (isLeftPinching && hoveredRoot && hoveredQuality) {
+        if (releaseTimeoutRef.current) {
+          clearTimeout(releaseTimeoutRef.current);
+          releaseTimeoutRef.current = null;
+        }
+
         const chordNotes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
         const chordKey = chordNotes.join(',');
         if (chordKey !== lastChordKeyRef.current) {
@@ -151,10 +165,14 @@ function App() {
           useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
         }
       } else {
-        if (lastChordKeyRef.current !== '') {
-          lastChordKeyRef.current = '';
-          looperService.releaseChord(hands.length === 0);
-          useMusicStore.getState().setMusicState({ playingNotes: [] });
+        if (lastChordKeyRef.current !== '' && !releaseTimeoutRef.current) {
+          const noHandsOnScreen = hands.length === 0;
+          releaseTimeoutRef.current = setTimeout(() => {
+            lastChordKeyRef.current = '';
+            looperService.releaseChord(noHandsOnScreen);
+            useMusicStore.getState().setMusicState({ playingNotes: [] });
+            releaseTimeoutRef.current = null;
+          }, 80);
         }
       }
 
@@ -177,6 +195,11 @@ function App() {
     } else {
       const hand = hands[0];
       if (hand?.isPinching && hoveredRoot) {
+        if (releaseTimeoutRef.current) {
+          clearTimeout(releaseTimeoutRef.current);
+          releaseTimeoutRef.current = null;
+        }
+
         // Play root note with octave doubling for a fuller melody sound
         const noteLow  = `${hoveredRoot}4`;
         const noteHigh = `${hoveredRoot}5`;
@@ -187,11 +210,14 @@ function App() {
           useMusicStore.getState().setMusicState({ playingNotes: [noteLow, noteHigh] });
         }
       } else {
-        if (lastChordKeyRef.current !== '') {
-          lastChordKeyRef.current = '';
+        if (lastChordKeyRef.current !== '' && !releaseTimeoutRef.current) {
           const noHandsOnScreen = hands.length === 0;
-          looperService.releaseNote(noHandsOnScreen);
-          useMusicStore.getState().setMusicState({ playingNotes: [] });
+          releaseTimeoutRef.current = setTimeout(() => {
+            lastChordKeyRef.current = '';
+            looperService.releaseNote(noHandsOnScreen);
+            useMusicStore.getState().setMusicState({ playingNotes: [] });
+            releaseTimeoutRef.current = null;
+          }, 80);
         }
       }
     }
