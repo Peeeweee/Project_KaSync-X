@@ -123,7 +123,7 @@ export class InstrumentService {
         break;
     }
     this.holdDuration = holdDuration;
-    synth.volume.value = -16; // Lower master gain — less distortion when multiple notes play
+    synth.volume.value = -24; // Further lower master gain to survive huge chord polyphony safely
     synth.connect(this.chorus);
     return synth;
   }

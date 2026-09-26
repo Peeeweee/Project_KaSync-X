@@ -47,7 +47,7 @@ export function useAudioTrigger(audioStarted: boolean) {
         }
         useMusicStore.getState().setMusicState({ playingNotes: [] });
         releaseTimer.current = null;
-      }, 60); // 60ms debounce — tight enough to feel instant, loose enough to survive jitter
+      }, 150); // 150ms debounce — prevents machine-gun rapid re-triggering if camera drops a tracking frame
     };
 
     // ── Core trigger function — called on every hand/music state change ──

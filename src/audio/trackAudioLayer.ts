@@ -92,7 +92,7 @@ export class TrackAudioLayer {
         });
         break;
     }
-    synth.volume.value = -16;
+    synth.volume.value = -24;
     synth.connect(this.chorus);
     return synth;
   }

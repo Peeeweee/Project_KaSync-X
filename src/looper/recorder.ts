@@ -121,7 +121,7 @@ export class LooperService {
         // Smart diffing for the looper track
         const notesToRelease = this.liveCurrentNotes.filter(n => !notes.includes(n));
         if (notesToRelease.length > 0) {
-          layer.triggerRelease(notesToRelease);
+          // Removed layer.triggerRelease to prevent double-audio routing
           midiManager.sendNoteOff(notesToRelease);        // MIDI Output
         }
         
@@ -144,7 +144,7 @@ export class LooperService {
       const attackTarget = this.liveCurrentNotes.length === 0 ? notes : notesToAttack;
       
       if (attackTarget.length > 0) {
-        layer.triggerAttack(attackTarget, velocity);
+        // Removed layer.triggerAttack to prevent double-audio (directInstrument is already playing it)
         midiManager.sendNoteOn(attackTarget, velocity);   // MIDI Output
       }
       
@@ -169,7 +169,7 @@ export class LooperService {
     
     const armedId = this.getArmedTrackId();
     if (armedId !== null && this.liveCurrentNotes.length > 0) {
-      this.trackLayers[armedId].triggerRelease(this.liveCurrentNotes);
+      // Removed layer.triggerRelease to prevent double-audio routing
       midiManager.sendNoteOff(this.liveCurrentNotes);   // MIDI Output
       
       // If we were recording this note, finish it and add to store
