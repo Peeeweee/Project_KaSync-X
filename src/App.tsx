@@ -147,14 +147,13 @@ function App() {
         }
       }
     } else if (mode === 'Song') {
-      // LEFT HAND: Chords
       const handLeft = hands[0];
       const handRight = hands[1];
       const isLeftPinching = handLeft?.isPinching ?? false;
       const isRightPinching = handRight?.isPinching ?? false;
 
-      // Dual hands required to play chord (like Chord mode)
-      if (isLeftPinching && isRightPinching && hoveredRoot && hoveredQuality) {
+      // LEFT HAND: pinch to play chord
+      if (isLeftPinching && hoveredRoot && hoveredQuality) {
         if (releaseTimeoutRef.current) {
           clearTimeout(releaseTimeoutRef.current);
           releaseTimeoutRef.current = null;
@@ -164,8 +163,7 @@ function App() {
         const chordKey = chordNotes.join(',');
         if (chordKey !== lastChordKeyRef.current) {
           lastChordKeyRef.current = chordKey;
-          const velocity = Math.max(handLeft!.pinchStrength, handRight!.pinchStrength);
-          looperService.triggerChord(chordNotes, velocity);
+          looperService.triggerChord(chordNotes, handLeft!.pinchStrength);
           useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
         }
       } else {
@@ -180,9 +178,7 @@ function App() {
         }
       }
 
-      // RIGHT HAND: Effects toggle
-      const handRight = hands[1];
-      const isRightPinching = handRight?.isPinching ?? false;
+      // RIGHT HAND: Effects toggle (uses same handRight/isRightPinching declared above)
 
       if (isRightPinching && hoveredEffect && !lastFxPinchRef.current) {
         // Just transitioned into a pinch on an effect slice

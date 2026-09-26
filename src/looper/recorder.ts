@@ -98,6 +98,12 @@ export class LooperService {
 
   // Intercepts live gesture plays
   public triggerChord(notes: string[], velocity: number) {
+    // Auto-resume AudioContext if the browser suspended it (happens after inactivity).
+    // This is safe to call repeatedly — it no-ops if already running.
+    if (Tone.context.state !== 'running') {
+      Tone.context.resume().catch(() => {});
+    }
+
     const armedId = this.getArmedTrackId();
     
     // Always play through direct instrument for immediate feedback

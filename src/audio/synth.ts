@@ -173,6 +173,11 @@ export class InstrumentService {
   }
 
   public triggerChord(notes: string[], velocity: number) {
+    // Auto-resume AudioContext if browser suspended it — safe to call repeatedly
+    if (Tone.context.state !== 'running') {
+      Tone.context.resume().catch(() => {});
+    }
+
     const safeVelocity = Math.max(0.1, Math.min(0.85, velocity));
 
     // Sort both arrays so comparison is order-independent
