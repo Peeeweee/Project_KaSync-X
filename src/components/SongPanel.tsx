@@ -3,6 +3,7 @@ import { useSongStore } from '../store/songStore';
 import type { Song, SongSection, SongChord } from '../store/songStore';
 import { CHROMATIC_NOTES } from '../music/scales';
 import { CHORD_QUALITIES } from '../music/chords';
+import { SongWizard } from './SongWizard';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SECTION_TEMPLATES = [
@@ -336,7 +337,7 @@ export function SongPanel() {
 
   // Draft state for the editor
   const [draft, setDraft] = useState<Song | null>(null);
-  const [activeTab, setActiveTab] = useState<'library' | 'editor'>('library');
+  const [activeTab, setActiveTab] = useState<'library' | 'editor' | 'wizard'>('library');
 
   const startNew = useCallback(() => {
     setDraft({
@@ -440,7 +441,7 @@ export function SongPanel() {
 
         {/* Tabs */}
         <div className="flex" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {(['library', 'editor'] as const).map(tab => (
+          {(['library', 'editor', 'wizard'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => {
@@ -453,7 +454,7 @@ export function SongPanel() {
                   : 'text-[#6E7C9C] hover:text-white'
               }`}
             >
-              {tab === 'library' ? '📚 Library' : '✏️ Editor'}
+              {tab === 'library' ? '📚 Library' : tab === 'editor' ? '✏️ Editor' : '✨ Wizard'}
             </button>
           ))}
         </div>
@@ -647,6 +648,19 @@ export function SongPanel() {
                 </div>
               </div>
             </>
+          )}
+
+          {/* ── WIZARD TAB ──────────────────────────────────────────────── */}
+          {activeTab === 'wizard' && (
+            <SongWizard
+              onImport={(song) => {
+                setDraft(song);
+                setActiveTab('editor');
+              }}
+              onCancel={() => {
+                setActiveTab('library');
+              }}
+            />
           )}
         </div>
 
