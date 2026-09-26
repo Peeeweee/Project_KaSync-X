@@ -149,9 +149,12 @@ function App() {
     } else if (mode === 'Song') {
       // LEFT HAND: Chords
       const handLeft = hands[0];
+      const handRight = hands[1];
       const isLeftPinching = handLeft?.isPinching ?? false;
+      const isRightPinching = handRight?.isPinching ?? false;
 
-      if (isLeftPinching && hoveredRoot && hoveredQuality) {
+      // Dual hands required to play chord (like Chord mode)
+      if (isLeftPinching && isRightPinching && hoveredRoot && hoveredQuality) {
         if (releaseTimeoutRef.current) {
           clearTimeout(releaseTimeoutRef.current);
           releaseTimeoutRef.current = null;
@@ -161,7 +164,8 @@ function App() {
         const chordKey = chordNotes.join(',');
         if (chordKey !== lastChordKeyRef.current) {
           lastChordKeyRef.current = chordKey;
-          looperService.triggerChord(chordNotes, handLeft!.pinchStrength);
+          const velocity = Math.max(handLeft!.pinchStrength, handRight!.pinchStrength);
+          looperService.triggerChord(chordNotes, velocity);
           useMusicStore.getState().setMusicState({ playingNotes: chordNotes });
         }
       } else {
@@ -231,9 +235,7 @@ function App() {
       const isLeftPinching = hands[0]?.isPinching ?? false;
       const isRightPinching = hands[1]?.isPinching ?? false;
       const dualPlay = isLeftPinching && isRightPinching;
-      playing = mode === 'Song'
-        ? isLeftPinching // In song mode, left hand alone plays the chord
-        : dualPlay;
+      playing = dualPlay; // Song mode now requires dual hands
       if (hoveredRoot && hoveredQuality) {
         // Reactively resolve the key: Song Mode uses its section key
         const keyToUse = mode === 'Song'
