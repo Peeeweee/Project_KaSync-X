@@ -139,8 +139,9 @@ function ChordWheel({
     }
 
     const { x: tipX, y: tipY } = hand.indexTipPosition;
-    // Remap hand X (0-0.5 is left side of screen) to center of the wheel (which is at 25% of screen width)
-    const normalizedX = tipX * 2; 
+    // Hand tip X is already normalized 0-1 across full screen width (mirrored).
+    // The chord wheel is at left: 25% of screen. Map left half of screen (0..0.5) to 0..1.
+    const normalizedX = Math.min(1, tipX / 0.5); 
     const dx = normalizedX - 0.5;
     const dy = tipY - 0.5;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -436,10 +437,27 @@ export function SongPalette() {
     }
   }, [mode]);
 
-  if (mode !== 'Song' || !activeSection) return null;
+  // Fallback section for when no song is loaded — always have something to play
+  const fallbackSection = useMemo(() => ({
+    id: 'fallback',
+    name: 'FREE',
+    colorTag: '#9D4EDD',
+    repeatCount: 1,
+    chords: [
+      { root: 'C', quality: 'maj' },
+      { root: 'G', quality: 'maj' },
+      { root: 'A', quality: 'min' },
+      { root: 'F', quality: 'maj' },
+      { root: 'D', quality: 'min' },
+      { root: 'E', quality: 'min' },
+    ],
+  }), []);
 
-  const sectionKey = activeSection.key ?? activeSong?.defaultKey ?? 'C';
-  const sectionColor = activeSection.colorTag ?? '#9D4EDD';
+  if (mode !== 'Song') return null;
+
+  const effectiveSection = activeSection ?? fallbackSection;
+  const sectionKey = effectiveSection.key ?? activeSong?.defaultKey ?? 'C';
+  const sectionColor = effectiveSection.colorTag ?? '#9D4EDD';
 
   return (
     <>
@@ -451,7 +469,7 @@ export function SongPalette() {
         activeSectionIndex={activeSectionIndex}
         onSelect={setActiveSection}
       />
-      <ChordWheel activeSection={activeSection} sectionKey={sectionKey} sectionColor={sectionColor} />
+      <ChordWheel activeSection={effectiveSection} sectionKey={sectionKey} sectionColor={sectionColor} />
       <FxWheel />
     </>
   );
