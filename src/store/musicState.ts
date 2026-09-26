@@ -58,6 +58,7 @@ export const useMusicStore = create<MusicState>((set) => ({
   setMusicState: (partial) =>
     set((state) => {
       const update = typeof partial === 'function' ? partial(state) : partial;
+      if (update === state) return state; // Prevent infinite re-renders if no changes
       return { ...state, ...update };
     }),
   cycleInstrument: (dir) =>

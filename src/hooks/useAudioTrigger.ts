@@ -99,23 +99,40 @@ export function useAudioTrigger(audioStarted: boolean) {
           scheduleRelease(false, hands.length === 0);
         }
 
-        // RIGHT HAND → toggle FX (track by zone name to prevent stacking)
+        // RIGHT HAND → Momentary FX (active only while pinched and hovering)
         if (rightPinch && hoveredEffect) {
           if (hoveredEffect !== lastFxEffect.current) {
-            // Entered a new FX zone — toggle this one effect exactly once
+            const store = useLooperStore.getState();
+            const armedTrack = store.tracks.find(t => t.isArmed);
+            if (armedTrack) {
+              // Turn ON new effect, and ensure all other FX are OFF (radio/momentary behavior)
+              const newEffects = { ...armedTrack.effects };
+              
+              // If we dragged from a previous effect, turn it off
+              if (lastFxEffect.current && lastFxEffect.current in newEffects) {
+                newEffects[lastFxEffect.current as keyof typeof newEffects] = false;
+              }
+              
+              // Turn on the current effect
+              newEffects[hoveredEffect as keyof typeof newEffects] = true;
+
+              store.setTrackProperty(armedTrack.id, 'effects', newEffects);
+            }
             lastFxEffect.current = hoveredEffect;
+          }
+        } else {
+          // Pinch released or moved off any effect — turn off the last active effect
+          if (lastFxEffect.current) {
             const store = useLooperStore.getState();
             const armedTrack = store.tracks.find(t => t.isArmed);
             if (armedTrack) {
               store.setTrackProperty(armedTrack.id, 'effects', {
                 ...armedTrack.effects,
-                [hoveredEffect]: !armedTrack.effects[hoveredEffect as keyof typeof armedTrack.effects],
+                [lastFxEffect.current]: false
               });
             }
+            lastFxEffect.current = null;
           }
-        } else if (!rightPinch) {
-          // Pinch released — reset so next pinch-enter fires again
-          lastFxEffect.current = null;
         }
 
       // ── MELODY MODE ──────────────────────────────────────────────────────────
