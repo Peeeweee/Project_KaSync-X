@@ -5,6 +5,7 @@ import { useMusicStore } from '../store/musicState';
 import type { EffectsState } from '../store/musicState';
 import { useLooperStore } from '../store/looperState';
 import { formatChordName } from '../music/enharmonics';
+import { getScreenHands } from '../tracking/handUtils';
 
 const SIZE = 420;
 const CENTER = 210;
@@ -116,56 +117,66 @@ function ChordWheel({
   sectionKey: string;
   sectionColor: string;
 }) {
-  const hands = useHandStore(s => s.smoothedHands);
-  const isTracking = useHandStore(s => s.isTracking);
   const setMusicState = useMusicStore(s => s.setMusicState);
-
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [parallax, setParallax] = useState({ x: 0, y: 0 });
   const prevHoveredRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!activeSection || activeSection.chords.length === 0) {
       setHoveredIndex(null);
-      setParallax({ x: 0, y: 0 });
+      if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
       return;
     }
 
-    const hand = hands[0]; // Left hand maps to ChordWheel
-    if (!isTracking || !hand) {
-      setHoveredIndex(null);
-      setParallax({ x: 0, y: 0 });
-      return;
-    }
+    const unsub = useHandStore.subscribe((state) => {
+      const hands = state.smoothedHands;
+      const { leftHand: hand } = getScreenHands(hands);
+      if (!state.isTracking || !hand) {
+        setHoveredIndex(null);
+        if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
+        return;
+      }
 
-    const { x: tipX, y: tipY } = hand.indexTipPosition;
-    // Hand tip X is already normalized 0-1 across full screen width (mirrored).
-    // The chord wheel is at left: 25% of screen. Map left half of screen (0..0.5) to 0..1.
-    const normalizedX = Math.min(1, tipX / 0.5); 
-    const dx = normalizedX - 0.5;
-    const dy = tipY - 0.5;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+      // Center of ChordWheel is at (25% screen width, 50% screen height)
+      const centerX = window.innerWidth * 0.25;
+      const centerY = window.innerHeight * 0.50;
+      const handX = hand.indexTipPosition.x * window.innerWidth;
+      const handY = hand.indexTipPosition.y * window.innerHeight;
 
-    if (dist < 0.08) {
-      setHoveredIndex(null);
-      setParallax({ x: 0, y: 0 });
-      return;
-    }
+      const dx = handX - centerX;
+      const dy = handY - centerY;
+      const dist = Math.hypot(dx, dy);
 
-    setParallax({ x: dx * 60, y: dy * 60 });
+      // Dead zone: inner center hub (< 35px) or outside wheel (> 260px)
+      if (dist < 35 || dist > 260) {
+        setHoveredIndex(null);
+        if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
+        return;
+      }
 
-    let angle = Math.atan2(dx, -dy);
-    if (angle < 0) angle += 2 * Math.PI;
+      if (containerRef.current) {
+        const maxP = 20;
+        const px = Math.max(-maxP, Math.min(maxP, (dx / 200) * maxP));
+        const py = Math.max(-maxP, Math.min(maxP, (dy / 200) * maxP));
+        containerRef.current.style.transform = `translate(calc(-50% + ${px}px), calc(-50% + ${py}px))`;
+      }
 
-    const numSlices = activeSection.chords.length;
-    const sliceAngle = (2 * Math.PI) / numSlices;
+      let angle = Math.atan2(dx, -dy);
+      if (angle < 0) angle += 2 * Math.PI;
 
-    let adj = angle + sliceAngle / 2;
-    if (adj >= 2 * Math.PI) adj -= 2 * Math.PI;
+      const numSlices = activeSection.chords.length;
+      const sliceAngle = (2 * Math.PI) / numSlices;
 
-    const idx = Math.floor(adj / sliceAngle) % numSlices;
-    setHoveredIndex(idx);
-  }, [hands, isTracking, activeSection]);
+      let adj = angle + sliceAngle / 2;
+      if (adj >= 2 * Math.PI) adj -= 2 * Math.PI;
+
+      const idx = Math.floor(adj / sliceAngle) % numSlices;
+      setHoveredIndex(idx);
+    });
+
+    return unsub;
+  }, [activeSection]);
 
   useEffect(() => {
     if (hoveredIndex === prevHoveredRef.current) return;
@@ -198,11 +209,12 @@ function ChordWheel({
 
   return (
     <div
+      ref={containerRef}
       className="absolute z-30 pointer-events-none"
       style={{
         top: '50%',
         left: '25%', // Left side
-        transform: `translate(calc(-50% + ${parallax.x}px), calc(-50% + ${parallax.y}px))`,
+        transform: 'translate(-50%, -50%)',
         transition: 'transform 0.08s ease-out',
       }}
     >
@@ -285,51 +297,63 @@ const FX_LIST: { id: keyof EffectsState, label: string, color: string }[] = [
 ];
 
 function FxWheel() {
-  const hands = useHandStore(s => s.smoothedHands);
-  const isTracking = useHandStore(s => s.isTracking);
   const setMusicState = useMusicStore(s => s.setMusicState);
   const armedTrack = useLooperStore(s => s.tracks.find(t => t.isArmed));
   const effects = armedTrack?.effects;
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [parallax, setParallax] = useState({ x: 0, y: 0 });
   const prevHoveredRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const hand = hands[1]; // Right hand maps to FxWheel
-    if (!isTracking || !hand) {
-      setHoveredIndex(null);
-      setParallax({ x: 0, y: 0 });
-      return;
-    }
+    const unsub = useHandStore.subscribe((state) => {
+      const hands = state.smoothedHands;
+      const { rightHand: hand } = getScreenHands(hands);
+      if (!state.isTracking || !hand) {
+        setHoveredIndex(null);
+        if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
+        return;
+      }
 
-    const { x: tipX, y: tipY } = hand.indexTipPosition;
-    // Remap hand X (0.5-1.0 is right side of screen) to center of the wheel (which is at 75% of screen width)
-    const normalizedX = (tipX - 0.5) * 2; 
-    const dx = normalizedX - 0.5;
-    const dy = tipY - 0.5;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+      // Center of FxWheel is at (75% screen width, 50% screen height)
+      const centerX = window.innerWidth * 0.75;
+      const centerY = window.innerHeight * 0.50;
+      const handX = hand.indexTipPosition.x * window.innerWidth;
+      const handY = hand.indexTipPosition.y * window.innerHeight;
 
-    if (dist < 0.08) {
-      setHoveredIndex(null);
-      setParallax({ x: 0, y: 0 });
-      return;
-    }
+      const dx = handX - centerX;
+      const dy = handY - centerY;
+      const dist = Math.hypot(dx, dy);
 
-    setParallax({ x: dx * 60, y: dy * 60 });
+      // Dead zone: inner center hub (< 35px) or outside wheel (> 260px)
+      if (dist < 35 || dist > 260) {
+        setHoveredIndex(null);
+        if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
+        return;
+      }
 
-    let angle = Math.atan2(dx, -dy);
-    if (angle < 0) angle += 2 * Math.PI;
+      if (containerRef.current) {
+        const maxP = 20;
+        const px = Math.max(-maxP, Math.min(maxP, (dx / 200) * maxP));
+        const py = Math.max(-maxP, Math.min(maxP, (dy / 200) * maxP));
+        containerRef.current.style.transform = `translate(calc(-50% + ${px}px), calc(-50% + ${py}px))`;
+      }
 
-    const numSlices = FX_LIST.length;
-    const sliceAngle = (2 * Math.PI) / numSlices;
+      let angle = Math.atan2(dx, -dy);
+      if (angle < 0) angle += 2 * Math.PI;
 
-    let adj = angle + sliceAngle / 2;
-    if (adj >= 2 * Math.PI) adj -= 2 * Math.PI;
+      const numSlices = FX_LIST.length;
+      const sliceAngle = (2 * Math.PI) / numSlices;
 
-    const idx = Math.floor(adj / sliceAngle) % numSlices;
-    setHoveredIndex(idx);
-  }, [hands, isTracking]);
+      let adj = angle + sliceAngle / 2;
+      if (adj >= 2 * Math.PI) adj -= 2 * Math.PI;
+
+      const idx = Math.floor(adj / sliceAngle) % numSlices;
+      setHoveredIndex(idx);
+    });
+
+    return unsub;
+  }, []);
 
   useEffect(() => {
     if (hoveredIndex === prevHoveredRef.current) return;
@@ -347,11 +371,12 @@ function FxWheel() {
 
   return (
     <div
+      ref={containerRef}
       className="absolute z-30 pointer-events-none"
       style={{
         top: '50%',
         left: '75%', // Right side
-        transform: `translate(calc(-50% + ${parallax.x}px), calc(-50% + ${parallax.y}px))`,
+        transform: 'translate(-50%, -50%)',
         transition: 'transform 0.08s ease-out',
       }}
     >
