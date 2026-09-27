@@ -18,7 +18,7 @@ interface LooperState {
 }
 
 const DEFAULT_EFFECTS: EffectsState = {
-  reverb: true,
+  reverb: false,
   delay: false,
   chorus: false,
   bitcrusher: false,
