@@ -11,10 +11,11 @@
  */
 import { useEffect, useRef } from 'react';
 import { useHandStore } from '../store/handState';
-import { useMusicStore } from '../store/musicState';
+import { useMusicStore, type EffectsState } from '../store/musicState';
 import { useLooperStore } from '../store/looperState';
 import { looperService } from '../looper/recorder';
 import { buildChord } from '../music/chords';
+import { getScreenHands } from '../tracking/handUtils';
 
 export function useAudioTrigger(audioStarted: boolean) {
   // Keep audioStarted in a ref so the subscription closure always reads current value
@@ -55,23 +56,25 @@ export function useAudioTrigger(audioStarted: boolean) {
       if (!audioStartedRef.current) return;
 
       const hands = useHandStore.getState().smoothedHands;
+      const { leftHand, rightHand } = getScreenHands(hands);
       const music = useMusicStore.getState();
       const { mode, hoveredRoot, hoveredQuality, hoveredBass, hoveredEffect } = music;
 
       // ── CHORD MODE ───────────────────────────────────────────────────────────
       if (mode === 'Chord') {
-        const h0 = hands[0];
-        const h1 = hands[1];
-        const leftPinch  = h0?.isPinching ?? false;
-        const rightPinch = h1?.isPinching ?? false;
+        const leftPinch  = leftHand?.isPinching ?? false;
+        const rightPinch = rightHand?.isPinching ?? false;
 
-        if (leftPinch && rightPinch && hoveredRoot && hoveredQuality) {
+        // Either hand pinching (or both) triggers the chord!
+        if ((leftPinch || rightPinch) && hoveredRoot) {
           clearRelease();
-          const notes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
+          const quality = hoveredQuality || 'maj';
+          const notes = buildChord(hoveredRoot, quality, hoveredBass);
           const key   = notes.join(',');
           if (key !== lastChordKey.current) {
             lastChordKey.current = key;
-            looperService.triggerChord(notes, Math.max(h0!.pinchStrength, h1!.pinchStrength));
+            const pinchVal = Math.max(leftHand?.pinchStrength ?? 0.8, rightHand?.pinchStrength ?? 0.8);
+            looperService.triggerChord(notes, pinchVal);
             music.setMusicState({ playingNotes: notes });
           }
         } else {
@@ -80,64 +83,63 @@ export function useAudioTrigger(audioStarted: boolean) {
 
       // ── SONG MODE ────────────────────────────────────────────────────────────
       } else if (mode === 'Song') {
-        const hLeft  = hands[0];
-        const hRight = hands[1];
-        const leftPinch  = hLeft?.isPinching  ?? false;
-        const rightPinch = hRight?.isPinching ?? false;
+        const leftPinch  = leftHand?.isPinching  ?? false;
+        const rightPinch = rightHand?.isPinching ?? false;
 
         // LEFT HAND → play chord
-        if (leftPinch && hoveredRoot && hoveredQuality) {
+        if (leftPinch && hoveredRoot) {
           clearRelease();
-          const notes = buildChord(hoveredRoot, hoveredQuality, hoveredBass);
+          const quality = hoveredQuality || 'maj';
+          const notes = buildChord(hoveredRoot, quality, hoveredBass);
           const key   = notes.join(',');
           if (key !== lastChordKey.current) {
             lastChordKey.current = key;
-            looperService.triggerChord(notes, hLeft!.pinchStrength);
+            looperService.triggerChord(notes, leftHand?.pinchStrength ?? 0.8);
             music.setMusicState({ playingNotes: notes });
           }
         } else {
           scheduleRelease(false, hands.length === 0);
         }
 
-        // RIGHT HAND → Momentary FX (active only while pinched and hovering)
+        // RIGHT HAND → Momentary FX (strictly non-stacking radio behavior)
         if (rightPinch && hoveredEffect) {
           if (hoveredEffect !== lastFxEffect.current) {
             const store = useLooperStore.getState();
             const armedTrack = store.tracks.find(t => t.isArmed);
             if (armedTrack) {
-              // Turn ON new effect, and ensure all other FX are OFF (radio/momentary behavior)
-              const newEffects = { ...armedTrack.effects };
-              
-              // If we dragged from a previous effect, turn it off
-              if (lastFxEffect.current && lastFxEffect.current in newEffects) {
-                newEffects[lastFxEffect.current as keyof typeof newEffects] = false;
-              }
-              
-              // Turn on the current effect
-              newEffects[hoveredEffect as keyof typeof newEffects] = true;
-
+              // Guaranteed mutual exclusivity: only the active effect is true
+              const newEffects: EffectsState = {
+                reverb: false,
+                delay: false,
+                chorus: false,
+                bitcrusher: false,
+                sustain: false,
+                [hoveredEffect]: true,
+              };
               store.setTrackProperty(armedTrack.id, 'effects', newEffects);
             }
             lastFxEffect.current = hoveredEffect;
           }
-        } else {
-          // Pinch released or moved off any effect — turn off the last active effect
-          if (lastFxEffect.current) {
-            const store = useLooperStore.getState();
-            const armedTrack = store.tracks.find(t => t.isArmed);
-            if (armedTrack) {
-              store.setTrackProperty(armedTrack.id, 'effects', {
-                ...armedTrack.effects,
-                [lastFxEffect.current]: false
-              });
-            }
-            lastFxEffect.current = null;
+        } else if (!rightPinch && lastFxEffect.current) {
+          // Pinch released — turn off all effects cleanly
+          const store = useLooperStore.getState();
+          const armedTrack = store.tracks.find(t => t.isArmed);
+          if (armedTrack) {
+            const allOff: EffectsState = {
+              reverb: false,
+              delay: false,
+              chorus: false,
+              bitcrusher: false,
+              sustain: false,
+            };
+            store.setTrackProperty(armedTrack.id, 'effects', allOff);
           }
+          lastFxEffect.current = null;
         }
 
       // ── MELODY MODE ──────────────────────────────────────────────────────────
       } else {
-        const h = hands[0];
+        const h = leftHand ?? rightHand ?? hands[0];
         if (h?.isPinching && hoveredRoot) {
           clearRelease();
           const noteLow  = `${hoveredRoot}4`;
@@ -145,8 +147,8 @@ export function useAudioTrigger(audioStarted: boolean) {
           const key = `${noteLow},${noteHigh}`;
           if (lastChordKey.current !== key) {
             lastChordKey.current = key;
-            looperService.triggerChord([noteLow, noteHigh], h.pinchStrength);
-            music.setMusicState({ playingNotes: [noteLow, noteHigh] });
+            looperService.triggerNote(noteLow, h?.pinchStrength ?? 0.8);
+            music.setMusicState({ playingNotes: [noteLow] });
           }
         } else {
           scheduleRelease(true, hands.length === 0);
