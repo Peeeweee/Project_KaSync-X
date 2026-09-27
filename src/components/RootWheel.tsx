@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useHandStore } from '../store/handState';
 import { useMusicStore } from '../store/musicState';
 import { CHROMATIC_NOTES, getActiveNoteIndex } from '../music/scales';
+import { getScreenHands } from '../tracking/handUtils';
 
 export function getWedgePath(
   innerRadius: number,
@@ -40,27 +41,13 @@ export function getWedgePath(
 }
 
 export function RootWheel() {
-  const mode = useMusicStore((state) => state.mode);
-  const isTracking = useHandStore((state) => state.isTracking);
-  const hands = useHandStore((state) => state.smoothedHands);
-
-  const hand = useMemo(() => {
-    if (mode === 'Chord') {
-      if (hands.length >= 2) {
-        // Left wheel takes the hand further to the left on screen (smaller X)
-        return hands[0].indexTipPosition.x < hands[1].indexTipPosition.x ? hands[0] : hands[1];
-      }
-      return hands[0];
-    }
-    return hands[0];
-  }, [hands, mode]);
-
   const { currentScale, currentKey, snapToScale } = useMusicStore();
   const setMusicState = useMusicStore((state) => state.setMusicState);
   const hoveredRoot = useMusicStore((state) => state.hoveredRoot);
   const hoveredBass = useMusicStore((state) => state.hoveredBass);
+  const mode = useMusicStore((state) => state.mode);
 
-  const [parallax, setParallax] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const SIZE = mode === 'Chord' ? 400 : 500;
@@ -79,7 +66,20 @@ export function RootWheel() {
   );
 
   useEffect(() => {
-    if (isTracking && hand) {
+    const unsub = useHandStore.subscribe((state) => {
+      const music = useMusicStore.getState();
+      const hands = state.smoothedHands;
+      const { leftHand } = getScreenHands(hands);
+      const hand = music.mode === 'Chord' ? leftHand : (leftHand ?? hands[0]);
+
+      if (!state.isTracking || !hand) {
+        if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
+        if (music.hoveredRoot || music.hoveredBass) {
+          music.setMusicState({ hoveredRoot: null, hoveredBass: null });
+        }
+        return;
+      }
+
       const { indexTipPosition } = hand;
       
       let wheelCenterX = mode === 'Chord' ? 0.25 : 0.5;
@@ -87,8 +87,10 @@ export function RootWheel() {
 
       if (svgRef.current) {
         const rect = svgRef.current.getBoundingClientRect();
-        wheelCenterX = (rect.left + rect.width / 2) / window.innerWidth;
-        wheelCenterY = (rect.top + rect.height / 2) / window.innerHeight;
+        if (rect.width > 0 && rect.height > 0) {
+          wheelCenterX = (rect.left + rect.width / 2) / (window.innerWidth || 1024);
+          wheelCenterY = (rect.top + rect.height / 2) / (window.innerHeight || 768);
+        }
       }
 
       const dx = indexTipPosition.x - wheelCenterX;
@@ -107,7 +109,9 @@ export function RootWheel() {
       const isInActiveZone = dist >= INNER_DEAD && dist <= OUTER_DEAD;
 
       if (isInActiveZone) {
-        setParallax({ x: dx * 80, y: rawDy * 80 });
+        if (containerRef.current) {
+          containerRef.current.style.transform = `translate(calc(-50% + ${dx * 80}px), calc(-50% + ${rawDy * 80}px))`;
+        }
 
         // Calculate angle where UP (12 o'clock) = 0, RIGHT (3 o'clock) = PI/2
         // Screen Y increases downward, so -rawDy points UP
@@ -124,8 +128,8 @@ export function RootWheel() {
           rootIndex
         );
 
-        let nextRoot = hoveredRoot;
-        let nextBass = hoveredBass;
+        let nextRoot = music.hoveredRoot;
+        let nextBass = music.hoveredBass;
 
         if (isBassOverride) {
           nextRoot = CHROMATIC_NOTES[selectedIndex];
@@ -135,32 +139,24 @@ export function RootWheel() {
           nextBass = null;
         }
 
-        if (nextRoot !== hoveredRoot || nextBass !== hoveredBass) {
-          setMusicState({ hoveredRoot: nextRoot, hoveredBass: nextBass });
+        if (nextRoot !== music.hoveredRoot || nextBass !== music.hoveredBass) {
+          music.setMusicState({ hoveredRoot: nextRoot, hoveredBass: nextBass });
         }
       } else {
         // Finger is OUTSIDE the active zone — freeze, silence
-        setParallax({ x: 0, y: 0 });
-        if (hoveredRoot || hoveredBass) {
-          setMusicState({ hoveredRoot: null, hoveredBass: null });
+        if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
+        if (music.hoveredRoot || music.hoveredBass) {
+          music.setMusicState({ hoveredRoot: null, hoveredBass: null });
         }
       }
-    } else {
-      setParallax({ x: 0, y: 0 });
-      if (hoveredRoot || hoveredBass) {
-        setMusicState({ hoveredRoot: null, hoveredBass: null });
-      }
-    }
+    });
+
+    return unsub;
   }, [
-    hand,
-    isTracking,
     mode,
     currentScale,
     currentKey,
     snapToScale,
-    setMusicState,
-    hoveredRoot,
-    hoveredBass,
   ]);
 
   const activeRootIndex = hoveredRoot
@@ -174,11 +170,12 @@ export function RootWheel() {
 
   return (
     <div
+      ref={containerRef}
       className="absolute z-30 pointer-events-none drop-shadow-2xl transition-all duration-300 ease-out"
       style={{ 
         top: '50%', 
         left: mode === 'Chord' ? '30%' : '50%',
-        transform: `translate(calc(-50% + ${parallax.x}px), calc(-50% + ${parallax.y}px))` 
+        transform: 'translate(-50%, -50%)' 
       }}
     >
       <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[460px] max-h-[460px]">
