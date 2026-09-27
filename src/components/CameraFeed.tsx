@@ -10,6 +10,7 @@ export function CameraFeed() {
   const { isReady, error } = useHandTracking(videoRef, selectedDeviceId);
 
   const refreshDevices = () => {
+    if (!navigator?.mediaDevices?.getUserMedia) return;
     navigator.mediaDevices.getUserMedia({ video: true })
       .then((stream) => {
         navigator.mediaDevices.enumerateDevices().then((deviceInfos) => {
