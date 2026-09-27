@@ -21,6 +21,7 @@ import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { useInstrumentGesture } from './hooks/useInstrumentGesture';
 import { useAudioTrigger } from './hooks/useAudioTrigger';
 import { useMidi } from './hooks/useMidi';
+import { getScreenHands } from './tracking/handUtils';
 import './index.css';
 
 function App() {
@@ -98,38 +99,48 @@ function App() {
   // ── Audio trigger (direct store subscription — bypasses React render cycle) ──
   useAudioTrigger(audioStarted);
 
-  // Master fade out when hands leave
+  // Ensure AudioContext is unlocked on ANY user interaction (click, tap, keypress)
   useEffect(() => {
-    if (!audioStarted) return;
-    if (hands.length === 0) {
-      looperService.setMasterVolume(-60, 3.0); // 3-second gradual fade to silence
-    } else {
-      looperService.setMasterVolume(0, 0.5);   // Quick fade back in
-    }
-  }, [hands.length, audioStarted]);
-
-
+    const unlockAudio = async () => {
+      try {
+        await looperService.startAudioContext();
+        setAudioStarted(true);
+      } catch {
+        // Ignore
+      }
+    };
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
 
   const { displayText, isPlaying } = useMemo(() => {
     let text = 'OFF';
     let playing = false;
+    const { leftHand, rightHand } = getScreenHands(hands);
 
-    if (mode === 'Chord' || mode === 'Song') {
-      const isLeftPinching = hands[0]?.isPinching ?? false;
-      const isRightPinching = hands[1]?.isPinching ?? false;
-      const dualPlay = isLeftPinching && isRightPinching;
-      playing = dualPlay; // Song mode now requires dual hands
+    if (mode === 'Chord') {
+      const isLeftPinching = leftHand?.isPinching ?? false;
+      const isRightPinching = rightHand?.isPinching ?? false;
+      playing = isLeftPinching || isRightPinching;
       if (hoveredRoot && hoveredQuality) {
-        // Reactively resolve the key: Song Mode uses its section key
-        const keyToUse = mode === 'Song'
-          ? (songSections?.[activeSectionIndex]?.key ?? songDefaultKey ?? currentKey)
-          : currentKey;
-        text = formatChordName(hoveredRoot, hoveredQuality, hoveredBass, keyToUse);
+        text = formatChordName(hoveredRoot, hoveredQuality, hoveredBass, currentKey);
       } else if (hoveredRoot) {
-        text = formatChordName(hoveredRoot, '', hoveredBass, currentKey);
+        text = formatChordName(hoveredRoot, 'maj', hoveredBass, currentKey);
+      }
+    } else if (mode === 'Song') {
+      playing = !!leftHand?.isPinching;
+      if (hoveredRoot) {
+        const quality = hoveredQuality || 'maj';
+        const keyToUse = songSections?.[activeSectionIndex]?.key ?? songDefaultKey ?? currentKey;
+        text = formatChordName(hoveredRoot, quality, hoveredBass, keyToUse);
       }
     } else {
-      playing = !!hands[0]?.isPinching;
+      const h = leftHand ?? rightHand ?? hands[0];
+      playing = !!h?.isPinching;
       if (hoveredRoot) {
         text = formatChordName(hoveredRoot, '', hoveredBass, currentKey);
       }
