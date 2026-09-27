@@ -3,26 +3,18 @@ import { useHandStore } from '../store/handState';
 import { useMusicStore } from '../store/musicState';
 import { CHORD_QUALITIES } from '../music/chords';
 import { getWedgePath } from './RootWheel';
+import { getScreenHands } from '../tracking/handUtils';
 
 export function QualityWheel() {
   const mode = useMusicStore((state) => state.mode);
   const isTracking = useHandStore((state) => state.isTracking);
   const hands = useHandStore((state) => state.smoothedHands);
 
-  const hand = useMemo(() => {
-    if (hands.length >= 2) {
-      // Right wheel takes the hand further to the right on screen (larger X)
-      return hands[0].indexTipPosition.x > hands[1].indexTipPosition.x ? hands[0] : hands[1];
-    }
-    return hands.length === 1 ? undefined : hands[1]; // fallback if only one hand is detected, we don't assign it to quality wheel unless it's explicitly the right hand?
-    // Actually, if there's only one hand, let's just let it be undefined so it doesn't fight with RootWheel.
-  }, [hands]);
-
   const { showExtendedQualities } = useMusicStore();
   const setMusicState = useMusicStore((state) => state.setMusicState);
   const hoveredQuality = useMusicStore((state) => state.hoveredQuality);
 
-  const [parallax, setParallax] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const SIZE = 400;
@@ -35,7 +27,19 @@ export function QualityWheel() {
   const extendedWedge = useMemo(() => getWedgePath(BASIC_RADIUS + 5, EXTENDED_RADIUS, 360 / CHORD_QUALITIES.extended.length), []);
 
   useEffect(() => {
-    if (isTracking && hand && mode === 'Chord') {
+    const unsub = useHandStore.subscribe((state) => {
+      if (useMusicStore.getState().mode !== 'Chord') return;
+      
+      const hands = state.smoothedHands;
+      const { rightHand: hand } = getScreenHands(hands);
+
+      if (!state.isTracking || !hand) {
+        if (containerRef.current) containerRef.current.style.transform = 'translate(50%, -50%)';
+        const music = useMusicStore.getState();
+        if (music.hoveredQuality) music.setMusicState({ hoveredQuality: null });
+        return;
+      }
+
       const { indexTipPosition } = hand;
       
       let wheelCenterX = 0.75;
@@ -43,8 +47,10 @@ export function QualityWheel() {
 
       if (svgRef.current) {
         const rect = svgRef.current.getBoundingClientRect();
-        wheelCenterX = (rect.left + rect.width / 2) / window.innerWidth;
-        wheelCenterY = (rect.top + rect.height / 2) / window.innerHeight;
+        if (rect.width > 0 && rect.height > 0) {
+          wheelCenterX = (rect.left + rect.width / 2) / (window.innerWidth || 1024);
+          wheelCenterY = (rect.top + rect.height / 2) / (window.innerHeight || 768);
+        }
       }
 
       const dx = indexTipPosition.x - wheelCenterX;
@@ -57,7 +63,9 @@ export function QualityWheel() {
       const isInActiveZone = dist >= INNER_DEAD && dist <= OUTER_DEAD;
 
       if (isInActiveZone) {
-        setParallax({ x: dx * 80, y: rawDy * 80 });
+        if (containerRef.current) {
+          containerRef.current.style.transform = `translate(calc(50% + ${dx * 80}px), calc(-50% + ${rawDy * 80}px))`;
+        }
 
         // Calculate angle where UP (12 o'clock) = 0, RIGHT (3 o'clock) = PI/2
         // Screen Y increases downward, so -rawDy points UP
@@ -78,22 +86,19 @@ export function QualityWheel() {
           nextQuality = CHORD_QUALITIES.basic[index];
         }
 
-        if (nextQuality !== hoveredQuality) {
-          setMusicState({ hoveredQuality: nextQuality });
+        const music = useMusicStore.getState();
+        if (nextQuality !== music.hoveredQuality) {
+          music.setMusicState({ hoveredQuality: nextQuality });
         }
       } else {
-        setParallax({ x: 0, y: 0 });
-        if (hoveredQuality) {
-          setMusicState({ hoveredQuality: null });
-        }
+        if (containerRef.current) containerRef.current.style.transform = 'translate(50%, -50%)';
+        const music = useMusicStore.getState();
+        if (music.hoveredQuality) music.setMusicState({ hoveredQuality: null });
       }
-    } else {
-      setParallax({ x: 0, y: 0 });
-      if (hoveredQuality) {
-        setMusicState({ hoveredQuality: null });
-      }
-    }
-  }, [hand, isTracking, mode, showExtendedQualities, setMusicState, hoveredQuality]);
+    });
+
+    return unsub;
+  }, [showExtendedQualities]);
 
   if (mode !== 'Chord') return null;
 
@@ -102,11 +107,12 @@ export function QualityWheel() {
 
   return (
     <div 
+      ref={containerRef}
       className="absolute z-30 pointer-events-none drop-shadow-2xl transition-all duration-300 ease-out"
       style={{ 
         top: '50%',
         right: '30%',
-        transform: `translate(calc(50% + ${parallax.x}px), calc(-50% + ${parallax.y}px))`
+        transform: 'translate(calc(50%), calc(-50%))'
       }}
     >
       <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[460px] max-h-[460px]">
