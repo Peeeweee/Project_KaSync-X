@@ -21,7 +21,7 @@ export class TrackAudioLayer {
 
   constructor(id: number) {
     this.id = id;
-    this.limiter = new Tone.Limiter(-12).toDestination();
+    this.limiter = new Tone.Limiter(-3).toDestination();
     this.volumeNode = new Tone.Volume(0).connect(this.limiter);
     
     // Initialize effects (reverb is lazy — see getOrCreateReverb)
@@ -92,7 +92,7 @@ export class TrackAudioLayer {
         });
         break;
     }
-    synth.volume.value = -24;
+    synth.volume.value = -8;
     synth.connect(this.chorus);
     return synth;
   }
