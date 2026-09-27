@@ -153,31 +153,31 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
           ) {
             const results = landmarkerRef.current.detectForVideo(cachedVideo, timestamp);
 
-            const rawLandmarks = results.landmarks;
-            const handsCategories = results.handednesses;
+            let sortedRawLandmarks = results.landmarks;
+            let sortedHandsCategories = results.handednesses;
 
-            // Adaptive EMA: on slow cameras (high lag), increase alpha for snappier response.
-            // Mutate alpha in-place instead of allocating a new HandEmaFilter each time.
-            const frameDelta = timestamp - lastInferenceTimeRef.current;
-            if (frameDelta > 0) {
-              const lagRatio = Math.min(frameDelta / INFERENCE_INTERVAL_MS, 3);
-              emaFilterRef.current.setAlpha(
-                Math.min(0.3 + lagRatio * 0.15, 0.85)
-              );
+            if (sortedRawLandmarks.length >= 2) {
+              const paired = sortedRawLandmarks.map((landmarks, i) => ({
+                landmarks,
+                category: sortedHandsCategories[i] ?? [],
+              }));
+              // Screen X is (1 - landmark.x) due to horizontal mirror flip
+              paired.sort((a, b) => (1 - a.landmarks[0].x) - (1 - b.landmarks[0].x));
+              sortedRawLandmarks = paired.map(p => p.landmarks);
+              sortedHandsCategories = paired.map(p => p.category);
             }
-            lastInferenceTimeRef.current = timestamp;
 
-            const smoothedLandmarks = emaFilterRef.current.filter(rawLandmarks);
+            const smoothedLandmarks = emaFilterRef.current.filter(sortedRawLandmarks);
 
-            const rawHands: HandData[] = rawLandmarks.map((l, i) => ({
+            const rawHands: HandData[] = sortedRawLandmarks.map((l, i) => ({
               landmarks: l,
-              handedness: handsCategories[i]?.[0]?.categoryName ?? 'Unknown',
+              handedness: sortedHandsCategories[i]?.[0]?.categoryName ?? 'Unknown',
               ...computeGestures(l, cachedVideo),
             }));
 
             const smoothedHands: HandData[] = smoothedLandmarks.map((l, i) => ({
               landmarks: l,
-              handedness: handsCategories[i]?.[0]?.categoryName ?? 'Unknown',
+              handedness: sortedHandsCategories[i]?.[0]?.categoryName ?? 'Unknown',
               ...computeGestures(l, cachedVideo),
             }));
 
