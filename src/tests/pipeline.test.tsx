@@ -187,10 +187,10 @@ describe('Pipeline E2E Test Harness', () => {
       useMusicStore.getState().setMusicState({ mode: 'Melody' });
     });
 
-    // 2. Generate pinch at East (Angle 0 -> Index 0 -> 'C')
+    // 2. Generate pinch at North (12 o'clock -> Angle 0 -> Index 0 -> 'C')
     // Center of screen is roughly 0.5, 0.5. 
-    // Wheel center is 50% for Melody. East (Angle 0) -> x > 0.5. So x: 0.65, y: 0.5.
-    const hand = createHand(true, 0.65, 0.5, 'Right');
+    // Wheel center is 50% for Melody. North (Angle 0) -> y < 0.5. So x: 0.5, y: 0.35.
+    const hand = createHand(true, 0.5, 0.35, 'Right');
     
     act(() => {
       processAndSetHand(hand, 'Right');
@@ -202,9 +202,12 @@ describe('Pipeline E2E Test Harness', () => {
     expect(mockAudioNode.triggerAttack).toHaveBeenCalled();
     
     // 4. Release hand
-    const releasedHand = createHand(false, 0.65, 0.5, 'Right');
+    const releasedHand = createHand(false, 0.5, 0.35, 'Right');
     act(() => {
       processAndSetHand(releasedHand, 'Right');
+    });
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 200));
     });
 
     // 5. Assert release
@@ -221,15 +224,12 @@ describe('Pipeline E2E Test Harness', () => {
       useMusicStore.getState().setMusicState({ mode: 'Chord' });
     });
 
-    // Left hand: Root Wheel (center 0.25, 0.5). East (C) -> x: 0.35, y: 0.5
-    const leftHand = createHand(true, 0.35, 0.5, 'Left');
-    // Right hand: Quality Wheel (center 0.75, 0.5). North (minor) -> x: 0.75, y: 0.35
-    // Wait, Quality wheel at North is index 3 -> aug? Let's check quality wheel mapping.
-    // Basic qualities: maj, min, dim, aug, 7, maj7, m7, sus4 (8 segments). 
-    // Math: angle -PI/2 is North. -PI/2 in [0, 2pi) is 3PI/2.
-    // Segment = 2PI/8 = PI/4. 
-    // index = Math.floor((3PI/2 + PI/8) / PI/4) % 8 = Math.floor(1.625 PI / 0.25 PI) = Math.floor(6.5) = 6 -> m7.
-    const rightHand = createHand(true, 0.75, 0.35, 'Right'); // Up from center
+    // Left hand on screen left (0.25 screen X -> 0.75 raw X due to mirror flip)
+    // Root Wheel (center 0.25, 0.5). North (C) -> screen (0.25, 0.35) -> raw (0.75, 0.35)
+    const leftHand = createHand(true, 0.75, 0.35, 'Left');
+    // Right hand on screen right (0.75 screen X -> 0.25 raw X)
+    // Quality Wheel (center 0.75, 0.5). North -> screen (0.75, 0.35) -> raw (0.25, 0.35)
+    const rightHand = createHand(true, 0.25, 0.35, 'Right');
     
     act(() => {
       processAndSetTwoHands(leftHand, rightHand);
@@ -242,22 +242,25 @@ describe('Pipeline E2E Test Harness', () => {
     // Let's assert that Tone.js triggerAttack was called with an array of notes.
     expect(mockAudioNode.triggerAttack).toHaveBeenCalled();
 
-    // Now let's drag the Left hand far East to trigger the Bass Ring (slash chord)
-    // Distance from center (0.25) to 0.45 is 0.2. Outer ring is > 0.15 threshold.
-    const leftSlash = createHand(true, 0.45, 0.5, 'Left');
+    // Now let's drag the Left hand far North to trigger the Bass Ring (slash chord)
+    // Distance from center (0.5 - 0.28 = 0.22). Outer ring is > 0.20 threshold.
+    const leftSlash = createHand(true, 0.75, 0.28, 'Left');
     
     act(() => {
       processAndSetTwoHands(leftSlash, rightHand);
     });
 
-    // Active bass should now be 'C' (since angle is still East, index 0).
+    // Active bass should now be 'C' (since angle is still North, index 0).
     expect(useMusicStore.getState().hoveredBass).toBe('C');
     
     // Release
-    const leftRelease = createHand(false, 0.45, 0.5, 'Left');
-    const rightRelease = createHand(false, 0.75, 0.35, 'Right');
+    const leftRelease = createHand(false, 0.75, 0.28, 'Left');
+    const rightRelease = createHand(false, 0.25, 0.35, 'Right');
     act(() => {
       processAndSetTwoHands(leftRelease, rightRelease);
+    });
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 200));
     });
 
     expect(looperService.releaseChord).toHaveBeenCalled();
@@ -279,15 +282,18 @@ describe('Pipeline E2E Test Harness', () => {
       useMusicStore.getState().setMusicState({ mode: 'Melody' });
     });
 
-    const hand = createHand(true, 0.65, 0.5, 'Right'); // Play C4
+    const hand = createHand(true, 0.5, 0.35, 'Right'); // Play C4
     act(() => {
       processAndSetHand(hand, 'Right');
     });
 
     // 3. Release note
-    const releaseHand = createHand(false, 0.65, 0.5, 'Right');
+    const releaseHand = createHand(false, 0.5, 0.35, 'Right');
     act(() => {
       processAndSetHand(releaseHand, 'Right');
+    });
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 200));
     });
 
     // 4. Assert event was added to track 0
