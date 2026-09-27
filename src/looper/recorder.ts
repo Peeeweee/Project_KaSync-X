@@ -74,6 +74,8 @@ export class LooperService {
     if (Tone.context.state !== 'running') {
       await Tone.context.resume();
     }
+    Tone.Destination.volume.value = 0;
+    Tone.Destination.mute = false;
     // Auto-resume AudioContext when tab becomes visible again (prevents "suspended" warning)
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && Tone.context.state === 'suspended') {
@@ -102,6 +104,13 @@ export class LooperService {
     // This is safe to call repeatedly — it no-ops if already running.
     if (Tone.context.state !== 'running') {
       Tone.context.resume().catch(() => {});
+    }
+
+    if (Tone.Destination.volume.value < -12) {
+      Tone.Destination.volume.value = 0;
+    }
+    if (Tone.Destination.mute) {
+      Tone.Destination.mute = false;
     }
 
     const armedId = this.getArmedTrackId();
