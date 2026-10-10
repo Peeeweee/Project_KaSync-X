@@ -6,10 +6,11 @@ function createMockLandmarks(thumbTip: Landmark, indexTip: Landmark): Landmark[]
   const landmarks: Landmark[] = new Array(21).fill({ x: 0, y: 0, z: 0 });
   landmarks[4] = thumbTip;
   landmarks[8] = indexTip;
-  // Mock palm bases to avoid NaN
-  [0, 5, 9, 13, 17].forEach((idx) => {
-    landmarks[idx] = { x: 0.5, y: 0.5, z: 0 };
-  });
+  landmarks[0] = { x: 0.5, y: 0.7, z: 0 };
+  landmarks[5] = { x: 0.4, y: 0.5, z: 0 };
+  landmarks[9] = { x: 0.5, y: 0.5, z: 0 };
+  landmarks[13] = { x: 0.56, y: 0.5, z: 0 };
+  landmarks[17] = { x: 0.6, y: 0.5, z: 0 };
   return landmarks;
 }
 
@@ -22,33 +23,60 @@ describe('computeGestures', () => {
     );
     const result = computeGestures(landmarks);
     expect(result.isPinching).toBe(true);
-    expect(result.pinchStrength).toBe(1); // 0 < MIN_PINCH_DIST (0.02), so clamped to 0.02, 1 - (0)/0.08 = 1
+    expect(result.pinchStrength).toBe(1);
   });
 
   it('detects when not pinching', () => {
-    // Distance is 0.2 (way past MAX_PINCH_DIST 0.1 and PINCH_THRESHOLD 0.06)
+    // Normalized distance is 1.0, far beyond the release threshold.
     const landmarks = createMockLandmarks(
       { x: 0.5, y: 0.5, z: 0 },
       { x: 0.7, y: 0.5, z: 0 }
     );
     const result = computeGestures(landmarks);
     expect(result.isPinching).toBe(false);
-    expect(result.pinchStrength).toBe(0); // clamped to 0.1, 1 - (0.08)/0.08 = 0
+    expect(result.pinchStrength).toBe(0);
   });
 
   it('handles boundary threshold', () => {
-    // Distance is exactly 0.059 (just under threshold 0.06)
+    // Effective scale is 0.3, so these become normalized distances just below/above 0.32.
     const justUnder = createMockLandmarks(
       { x: 0.5, y: 0.5, z: 0 },
-      { x: 0.559, y: 0.5, z: 0 }
+      { x: 0.595, y: 0.5, z: 0 }
     );
     expect(computeGestures(justUnder).isPinching).toBe(true);
 
-    // Distance is exactly 0.061 (just over threshold 0.06)
     const justOver = createMockLandmarks(
       { x: 0.5, y: 0.5, z: 0 },
-      { x: 0.561, y: 0.5, z: 0 }
+      { x: 0.597, y: 0.5, z: 0 }
     );
     expect(computeGestures(justOver).isPinching).toBe(false);
+  });
+
+  it('uses hysteresis to avoid flickering near the pinch boundary', () => {
+    const betweenThresholds = createMockLandmarks(
+      { x: 0.5, y: 0.5, z: 0 },
+      { x: 0.615, y: 0.5, z: 0 },
+    );
+
+    expect(computeGestures(betweenThresholds, null, { previousPinching: false }).isPinching).toBe(false);
+    expect(computeGestures(betweenThresholds, null, { previousPinching: true }).isPinching).toBe(true);
+  });
+
+  it('normalizes pinch distance by hand size', () => {
+    const largeHand = createMockLandmarks(
+      { x: 0.5, y: 0.5, z: 0 },
+      { x: 0.56, y: 0.5, z: 0 },
+    );
+    const smallHand = createMockLandmarks(
+      { x: 0.5, y: 0.5, z: 0 },
+      { x: 0.53, y: 0.5, z: 0 },
+    );
+    smallHand[0] = { x: 0.5, y: 0.6, z: 0 };
+    smallHand[5] = { x: 0.45, y: 0.5, z: 0 };
+    smallHand[17] = { x: 0.55, y: 0.5, z: 0 };
+
+    expect(computeGestures(largeHand).pinchDistance).toBeCloseTo(
+      computeGestures(smallHand).pinchDistance,
+    );
   });
 });
