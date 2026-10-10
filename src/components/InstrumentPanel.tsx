@@ -67,13 +67,13 @@ export function InstrumentPanel() {
   };
 
   return (
-    <div
-      className="absolute top-[140px] right-6 z-40 flex flex-col gap-2 pointer-events-none w-52 instrument-panel-enter"
+    <aside
+      className="kasync-instruments absolute top-[140px] right-6 z-40 flex flex-col gap-2 pointer-events-none w-44 instrument-panel-enter"
       aria-label="Instrument Selector"
     >
       {/* Panel Header */}
-      <div className="pointer-events-auto flex items-center justify-between bg-black/80 backdrop-blur-3xl border-b-2 border-t border-l border-r border-t-transparent border-l-transparent border-r-transparent border-b-[var(--color-secondary)] px-3 py-1.5 shadow-[0_5px_15px_rgba(0,240,255,0.1)] rounded-t-lg">
-        <span className="text-[9px] text-[var(--color-metal-light)] font-bold uppercase tracking-widest">
+      <div className="pointer-events-auto flex items-center justify-between bg-black/80 backdrop-blur-3xl border-l-2 border-t border-r border-b border-t-[var(--color-metal-dark)] border-r-[var(--color-metal-dark)] border-b-[var(--color-secondary)] border-l-[var(--color-metal-light)] px-2 py-1 shadow-[0_5px_15px_rgba(0,240,255,0.1)] rounded-t-md">
+        <span className="text-[10px] text-[var(--color-metal-light)] font-display font-bold uppercase tracking-widest whitespace-nowrap" style={{ fontSize: '10px' }}>
           Sound <span className="text-[var(--color-secondary)]">Engine</span>
         </span>
         <span className="text-[7px] text-[var(--color-metal-light)]/50 font-mono uppercase tracking-wider hidden sm:block">
@@ -95,8 +95,8 @@ export function InstrumentPanel() {
               aria-pressed={isActive}
               onClick={() => handleSelect(inst.type)}
               className={[
-                "pointer-events-auto relative overflow-hidden flex items-center gap-2.5",
-                "border-l-2 border rounded-r-md px-2.5 py-2",
+                "pointer-events-auto relative overflow-hidden flex items-center gap-2",
+                "border-l-2 border rounded-r-md px-2 py-1",
                 "text-left transition-all duration-200 group",
                 isActive
                   ? "bg-black/80 instrument-card-active"
@@ -179,6 +179,6 @@ export function InstrumentPanel() {
         </span>
         <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-[var(--color-secondary)]/20 to-transparent" />
       </div>
-    </div>
+    </aside>
   );
 }
