@@ -6,7 +6,8 @@
 export function landmarkToScreen(
   landmarkX: number,
   landmarkY: number,
-  videoEl: HTMLVideoElement
+  videoEl: HTMLVideoElement,
+  mirrored: boolean = true,
 ): { x: number; y: number } {
   const vw = videoEl.videoWidth || 640;
   const vh = videoEl.videoHeight || 480;
@@ -32,6 +33,5 @@ export function landmarkToScreen(
   const normX = pixelX / dw;
   const normY = pixelY / dh;
 
-  // Apply scaleX(-1) mirror flip
-  return { x: 1 - normX, y: normY };
+  return { x: mirrored ? 1 - normX : normX, y: normY };
 }
