@@ -10,6 +10,9 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "paths": {
+      "@mediapipe/tasks-vision": ["./node_modules/@mediapipe/tasks-vision/vision.d.ts"]
+    },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
