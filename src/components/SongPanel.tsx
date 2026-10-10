@@ -15,8 +15,6 @@ const SECTION_TEMPLATES = [
   { name: 'Outro',      colorTag: '#4CAF50', icon: '⟨' },
 ];
 
-const ALL_QUALITIES = [...CHORD_QUALITIES.basic, ...CHORD_QUALITIES.extended];
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
@@ -204,12 +202,15 @@ function SectionCard({
           {/* Key change row */}
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer select-none">
-              <div
+              <button
+                type="button"
+                aria-label="Toggle section key change"
+                aria-pressed={Boolean(section.key)}
                 className={`w-8 h-4 rounded-full transition-colors relative ${section.key ? 'bg-[#F9A826]' : 'bg-white/10'}`}
                 onClick={() => onUpdate({ ...section, key: section.key ? undefined : 'G' })}
               >
                 <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${section.key ? 'translate-x-4' : ''}`} />
-              </div>
+              </button>
               <span className="text-[10px] text-[#6E7C9C]">Key Change</span>
             </label>
 
@@ -237,6 +238,39 @@ function SectionCard({
               />
               <span className="text-[10px] text-[#6E7C9C]">×</span>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onUpdate({ ...section, bpmOverride: section.bpmOverride ? undefined : 120 })}
+              className={`rounded-full border px-3 py-1 text-[9px] uppercase tracking-wider transition-colors ${
+                section.bpmOverride
+                  ? 'border-[#00f0ff]/40 bg-[#00f0ff]/10 text-[#00f0ff]'
+                  : 'border-white/10 text-[#6E7C9C] hover:text-white'
+              }`}
+            >
+              Section Tempo
+            </button>
+            {section.bpmOverride && (
+              <label className="flex items-center gap-2 text-[10px] text-[#6E7C9C]">
+                <input
+                  type="number"
+                  min={30}
+                  max={300}
+                  className="w-16 rounded border border-white/10 bg-[#0a0b14] px-2 py-1 text-center text-xs text-white outline-none"
+                  value={section.bpmOverride}
+                  onChange={event => onUpdate({
+                    ...section,
+                    bpmOverride: Math.max(30, Math.min(300, parseInt(event.target.value) || 120)),
+                  })}
+                />
+                BPM
+              </label>
+            )}
+            <span className="text-[9px] text-[#6E7C9C]/70">
+              {section.bpmOverride ? 'Overrides the song tempo for this section.' : 'Uses the song default tempo.'}
+            </span>
           </div>
 
           {/* Chord label row */}
@@ -409,7 +443,10 @@ export function SongPanel() {
 
       {/* Panel */}
       <div
-        className="absolute z-50 right-0 top-0 h-full flex flex-col"
+        className="kasync-song-panel absolute z-50 right-0 top-0 h-full flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Song Architect"
         style={{
           width: '420px',
           background: 'rgba(6, 7, 16, 0.97)',
@@ -433,6 +470,7 @@ export function SongPanel() {
           </div>
           <button
             onClick={toggleSongPanel}
+            aria-label="Close Song Architect"
             className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-[#6E7C9C] hover:text-white hover:border-white/30 transition-all text-sm"
           >
             ×
