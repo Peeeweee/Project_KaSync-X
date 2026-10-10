@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useHandStore } from '../store/handState';
+import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { landmarkToScreen } from '../tracking/coordUtils';
 
 const HAND_CONNECTIONS = [
@@ -45,6 +46,7 @@ export function CanvasOverlay() {
     if (!ctx) return;
 
     let animationId: number;
+    let frameCount = 0;
     // Cache the video element once — avoids document.querySelector('video') at 60 fps
     let cachedVideoEl: HTMLVideoElement | null = null;
 
@@ -56,6 +58,10 @@ export function CanvasOverlay() {
     };
 
     const draw = () => {
+      animationId = requestAnimationFrame(draw);
+      frameCount++;
+      if (document.body.classList.contains('low-perf-mode') && frameCount % 3 !== 0) return;
+
       const { clientWidth, clientHeight } = canvas.parentElement || document.body;
       if (canvas.width !== clientWidth || canvas.height !== clientHeight) {
         canvas.width = clientWidth;
@@ -67,6 +73,8 @@ export function CanvasOverlay() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const { smoothedHands, isTracking } = useHandStore.getState();
+      const { mirrorCamera, showHandOverlay } = useTrackingSettingsStore.getState();
+      if (!showHandOverlay) return;
       const videoEl = getVideo();
 
       if (isTracking && smoothedHands) {
@@ -86,11 +94,11 @@ export function CanvasOverlay() {
             if (!start || !end) return;
 
             const sc = videoEl
-              ? landmarkToScreen(start.x, start.y, videoEl)
-              : { x: 1 - start.x, y: start.y };
+              ? landmarkToScreen(start.x, start.y, videoEl, mirrorCamera)
+              : { x: mirrorCamera ? 1 - start.x : start.x, y: start.y };
             const ec = videoEl
-              ? landmarkToScreen(end.x, end.y, videoEl)
-              : { x: 1 - end.x, y: end.y };
+              ? landmarkToScreen(end.x, end.y, videoEl, mirrorCamera)
+              : { x: mirrorCamera ? 1 - end.x : end.x, y: end.y };
 
             ctx.moveTo(sc.x * canvas.width, sc.y * canvas.height);
             ctx.lineTo(ec.x * canvas.width, ec.y * canvas.height);
@@ -102,8 +110,8 @@ export function CanvasOverlay() {
             const tip = hand.landmarks[idx];
             if (!tip) return;
             const sc = videoEl
-              ? landmarkToScreen(tip.x, tip.y, videoEl)
-              : { x: 1 - tip.x, y: tip.y };
+              ? landmarkToScreen(tip.x, tip.y, videoEl, mirrorCamera)
+              : { x: mirrorCamera ? 1 - tip.x : tip.x, y: tip.y };
             const tx = sc.x * canvas.width;
             const ty = sc.y * canvas.height;
 
@@ -128,11 +136,11 @@ export function CanvasOverlay() {
             const thumbTip = hand.landmarks[4];
             const indexTip = hand.landmarks[8];
             const sc4 = videoEl
-              ? landmarkToScreen(thumbTip.x, thumbTip.y, videoEl)
-              : { x: 1 - thumbTip.x, y: thumbTip.y };
+              ? landmarkToScreen(thumbTip.x, thumbTip.y, videoEl, mirrorCamera)
+              : { x: mirrorCamera ? 1 - thumbTip.x : thumbTip.x, y: thumbTip.y };
             const sc8 = videoEl
-              ? landmarkToScreen(indexTip.x, indexTip.y, videoEl)
-              : { x: 1 - indexTip.x, y: indexTip.y };
+              ? landmarkToScreen(indexTip.x, indexTip.y, videoEl, mirrorCamera)
+              : { x: mirrorCamera ? 1 - indexTip.x : indexTip.x, y: indexTip.y };
 
             ctx.strokeStyle = hand.isPinching ? '#ffe44d' : '#a56bff';
             ctx.lineWidth = hand.isPinching ? 3 : 1.5;
@@ -148,7 +156,6 @@ export function CanvasOverlay() {
         });
       }
 
-      animationId = requestAnimationFrame(draw);
     };
 
     draw();
