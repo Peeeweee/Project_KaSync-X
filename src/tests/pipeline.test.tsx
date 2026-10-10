@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, act, screen } from '@testing-library/react';
+import { render, act, fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
 import { useHandStore } from '../store/handState';
@@ -8,7 +8,6 @@ import { useLooperStore } from '../store/looperState';
 import { looperService } from '../looper/recorder';
 import { computeGestures } from '../tracking/gestureRecognizer';
 import type { Landmark } from '@mediapipe/tasks-vision';
-import * as Tone from 'tone';
 
 // --- TONE.JS MOCK ---
 const { mockAudioNode, mockPart } = vi.hoisted(() => ({
@@ -34,11 +33,12 @@ const { mockAudioNode, mockPart } = vi.hoisted(() => ({
     add: vi.fn().mockReturnThis(),
     loop: false,
     loopEnd: 0,
+    mute: false,
   }
 }));
 
 vi.mock('tone', () => {
-  const MockClass = function(this: any) {
+  const MockClass = function(this: object) {
     return mockAudioNode;
   };
   
@@ -55,13 +55,24 @@ vi.mock('tone', () => {
     Limiter: MockClass,   // required by InstrumentService + TrackAudioLayer
     Part: function() { return mockPart; },
     Transport: {
-      bpm: { value: 120 },
+      bpm: { value: 120, rampTo: vi.fn(), setValueAtTime: vi.fn() },
       start: vi.fn(),
       stop: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      clear: vi.fn(),
+      scheduleRepeat: vi.fn(() => 1),
+      scheduleOnce: vi.fn(() => 2),
       position: "0:0:0",
-      state: 'stopped'
+      state: 'stopped',
+      ticks: 0,
+      PPQ: 192,
+      loop: true,
+      loopEnd: '4m',
     },
+    Draw: { schedule: vi.fn((callback: () => void) => callback()) },
     now: vi.fn(() => 0),
+    immediate: vi.fn(() => 0),
     Offline: vi.fn(),
     Gain: MockClass,
     Volume: MockClass,
@@ -98,7 +109,7 @@ vi.spyOn(looperService, 'releaseNote');
 // --- MOCK LANDMARK GENERATOR ---
 // Generates a hand. Root wheel is roughly centered on screen.
 // We'll mock the palm position to specific normalized coordinates to trigger wheel slices.
-function createHand(isPinching: boolean, normalizedX: number, normalizedY: number, handedness: 'Left' | 'Right'): Landmark[] {
+function createHand(isPinching: boolean, normalizedX: number, normalizedY: number): Landmark[] {
   const landmarks: Landmark[] = new Array(21).fill({ x: normalizedX, y: normalizedY, z: 0 });
   
   // To satisfy computeGestures pinch logic:
@@ -131,6 +142,7 @@ function processAndSetHand(landmarks: Landmark[], handedness: 'Left' | 'Right') 
     landmarks,
     isPinching: gesture.isPinching,
     pinchStrength: gesture.pinchStrength,
+    pinchDistance: gesture.pinchDistance,
     palmPosition: gesture.palmPosition,
     indexTipPosition: gesture.indexTipPosition,
     handRotation: gesture.handRotation,
@@ -146,6 +158,7 @@ function processAndSetTwoHands(left: Landmark[], right: Landmark[]) {
     landmarks: left,
     isPinching: leftGesture.isPinching,
     pinchStrength: leftGesture.pinchStrength,
+    pinchDistance: leftGesture.pinchDistance,
     palmPosition: leftGesture.palmPosition,
     indexTipPosition: leftGesture.indexTipPosition,
     handRotation: leftGesture.handRotation,
@@ -155,6 +168,7 @@ function processAndSetTwoHands(left: Landmark[], right: Landmark[]) {
     landmarks: right,
     isPinching: rightGesture.isPinching,
     pinchStrength: rightGesture.pinchStrength,
+    pinchDistance: rightGesture.pinchDistance,
     palmPosition: rightGesture.palmPosition,
     indexTipPosition: rightGesture.indexTipPosition,
     handRotation: rightGesture.handRotation,
@@ -169,7 +183,21 @@ describe('Pipeline E2E Test Harness', () => {
     useHandStore.getState().setHands([], []);
     useHandStore.getState().setIsTracking(true);
     useMusicStore.getState().setMusicState({ hoveredRoot: null, hoveredQuality: null, hoveredBass: null, mode: 'Chord' });
-    useLooperStore.getState().setTransportState({ isGlobalRecording: false, isPlaying: false });
+    useLooperStore.setState(state => ({
+      tracks: state.tracks.map(track => ({
+        ...track,
+        events: [],
+        effects: { reverb: false, delay: false, chorus: false, bitcrusher: false, sustain: false },
+      })),
+      undoHistory: {},
+      redoHistory: {},
+      pendingTake: null,
+      isGlobalRecording: false,
+      isPlaying: false,
+      isCountingIn: false,
+      countInBars: 1,
+      overdubEnabled: true,
+    }));
     // Clear tutorial state so we don't get blocked
     localStorage.setItem('kasync_tutorial_completed', 'true');
   });
@@ -190,7 +218,7 @@ describe('Pipeline E2E Test Harness', () => {
     // 2. Generate pinch at North (12 o'clock -> Angle 0 -> Index 0 -> 'C')
     // Center of screen is roughly 0.5, 0.5. 
     // Wheel center is 50% for Melody. North (Angle 0) -> y < 0.5. So x: 0.5, y: 0.35.
-    const hand = createHand(true, 0.5, 0.35, 'Right');
+    const hand = createHand(true, 0.5, 0.35);
     
     act(() => {
       processAndSetHand(hand, 'Right');
@@ -202,7 +230,7 @@ describe('Pipeline E2E Test Harness', () => {
     expect(mockAudioNode.triggerAttack).toHaveBeenCalled();
     
     // 4. Release hand
-    const releasedHand = createHand(false, 0.5, 0.35, 'Right');
+    const releasedHand = createHand(false, 0.5, 0.35);
     act(() => {
       processAndSetHand(releasedHand, 'Right');
     });
@@ -226,10 +254,10 @@ describe('Pipeline E2E Test Harness', () => {
 
     // Left hand on screen left (0.25 screen X -> 0.75 raw X due to mirror flip)
     // Root Wheel (center 0.25, 0.5). North (C) -> screen (0.25, 0.35) -> raw (0.75, 0.35)
-    const leftHand = createHand(true, 0.75, 0.35, 'Left');
+    const leftHand = createHand(true, 0.75, 0.35);
     // Right hand on screen right (0.75 screen X -> 0.25 raw X)
     // Quality Wheel (center 0.75, 0.5). North -> screen (0.75, 0.35) -> raw (0.25, 0.35)
-    const rightHand = createHand(true, 0.25, 0.35, 'Right');
+    const rightHand = createHand(true, 0.25, 0.35);
     
     act(() => {
       processAndSetTwoHands(leftHand, rightHand);
@@ -244,7 +272,7 @@ describe('Pipeline E2E Test Harness', () => {
 
     // Now let's drag the Left hand far North to trigger the Bass Ring (slash chord)
     // Distance from center (0.5 - 0.28 = 0.22). Outer ring is > 0.20 threshold.
-    const leftSlash = createHand(true, 0.75, 0.28, 'Left');
+    const leftSlash = createHand(true, 0.75, 0.28);
     
     act(() => {
       processAndSetTwoHands(leftSlash, rightHand);
@@ -254,8 +282,8 @@ describe('Pipeline E2E Test Harness', () => {
     expect(useMusicStore.getState().hoveredBass).toBe('C');
     
     // Release
-    const leftRelease = createHand(false, 0.75, 0.28, 'Left');
-    const rightRelease = createHand(false, 0.25, 0.35, 'Right');
+    const leftRelease = createHand(false, 0.75, 0.28);
+    const rightRelease = createHand(false, 0.25, 0.35);
     act(() => {
       processAndSetTwoHands(leftRelease, rightRelease);
     });
@@ -282,13 +310,13 @@ describe('Pipeline E2E Test Harness', () => {
       useMusicStore.getState().setMusicState({ mode: 'Melody' });
     });
 
-    const hand = createHand(true, 0.5, 0.35, 'Right'); // Play C4
+    const hand = createHand(true, 0.5, 0.35); // Play C4
     act(() => {
       processAndSetHand(hand, 'Right');
     });
 
     // 3. Release note
-    const releaseHand = createHand(false, 0.5, 0.35, 'Right');
+    const releaseHand = createHand(false, 0.5, 0.35);
     act(() => {
       processAndSetHand(releaseHand, 'Right');
     });
@@ -302,5 +330,60 @@ describe('Pipeline E2E Test Harness', () => {
     
     // The recorded event should have the note we just triggered
     expect(track0.events[0].notes).toContain('C4');
+  });
+
+  it('schedules and safely cancels a transport count-in', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
+
+    act(() => looperService.toggleRecording());
+    expect(useLooperStore.getState().isCountingIn).toBe(true);
+    expect(useLooperStore.getState().isPlaying).toBe(true);
+
+    act(() => looperService.toggleRecording());
+    expect(useLooperStore.getState().isCountingIn).toBe(false);
+    expect(useLooperStore.getState().isPlaying).toBe(false);
+  });
+
+  it('holds live notes while sustain is enabled and releases them when disabled', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
+    const store = useLooperStore.getState();
+    const track = store.tracks[0];
+
+    act(() => {
+      store.setTrackProperty(0, 'effects', { ...track.effects, sustain: true });
+      looperService.triggerNote('C4', 0.8);
+    });
+    mockAudioNode.triggerRelease.mockClear();
+
+    act(() => looperService.releaseNote());
+    expect(mockAudioNode.triggerRelease).not.toHaveBeenCalled();
+
+    act(() => {
+      const current = useLooperStore.getState().tracks[0];
+      useLooperStore.getState().setTrackProperty(0, 'effects', { ...current.effects, sustain: false });
+    });
+    expect(mockAudioNode.triggerRelease).toHaveBeenCalled();
+  });
+
+  it('provides keyboard transport controls without hijacking form fields', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: ' ', code: 'Space' });
+    expect(useLooperStore.getState().isPlaying).toBe(true);
+
+    act(() => useLooperStore.getState().setTransportState({ isPlaying: false }));
+    const bpmInput = screen.getByRole('spinbutton');
+    fireEvent.keyDown(bpmInput, { key: ' ', code: 'Space' });
+    expect(useLooperStore.getState().isPlaying).toBe(false);
+  });
+
+  it('opens the accessible project controls', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: /project and session controls/i }));
+
+    expect(screen.getByRole('dialog', { name: /project core/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /export project/i })).toBeTruthy();
+    expect(screen.getByText(/ctrl z \/ y/i)).toBeTruthy();
   });
 });
