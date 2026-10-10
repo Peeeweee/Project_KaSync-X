@@ -83,7 +83,7 @@ export function MidiPanel() {
 
   return (
     <div
-      className="absolute top-[110px] left-[248px] z-50 w-[268px] pointer-events-auto midi-panel-enter"
+      className="kasync-midi-panel absolute top-[110px] left-[248px] z-50 w-[268px] pointer-events-auto midi-panel-enter"
       aria-label="MIDI Configuration Panel"
     >
       <div
