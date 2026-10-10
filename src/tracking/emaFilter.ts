@@ -13,6 +13,10 @@ export class HandEmaFilter {
     this.alpha = alpha;
   }
 
+  reset() {
+    this.previousLandmarks = [];
+  }
+
   filter(currentLandmarks: Landmark[][]): Landmark[][] {
     // If hand count changed, reset filter to avoid interpolating between different hands
     if (this.previousLandmarks.length !== currentLandmarks.length) {
@@ -29,7 +33,6 @@ export class HandEmaFilter {
           x: this.alpha * point.x + (1 - this.alpha) * prev.x,
           y: this.alpha * point.y + (1 - this.alpha) * prev.y,
           z: this.alpha * point.z + (1 - this.alpha) * prev.z,
-          visibility: point.visibility,
         };
       });
     });
