@@ -1,14 +1,18 @@
 import { create } from 'zustand';
 import type { Landmark } from '@mediapipe/tasks-vision';
 
+export type ScreenRole = 'left' | 'right';
+
 export interface HandData {
   landmarks: Landmark[];
   handedness: string; // 'Left' or 'Right'
   isPinching: boolean;
   pinchStrength: number;
+  pinchDistance: number;
   palmPosition: { x: number; y: number };
   indexTipPosition: { x: number; y: number }; // index fingertip (landmark 8), x already mirrored
   handRotation: number;
+  screenRole?: ScreenRole;
 }
 
 interface HandState {
@@ -45,4 +49,3 @@ export const useHandStore = create<HandState>((set, get) => ({
   },
   setIsTracking: (isTracking) => set({ isTracking }),
 }));
-
