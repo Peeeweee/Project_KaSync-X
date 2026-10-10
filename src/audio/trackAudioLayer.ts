@@ -18,6 +18,7 @@ export class TrackAudioLayer {
   private bitcrusher: Tone.BitCrusher;
   private delay: Tone.FeedbackDelay;
   private reverb: Tone.Reverb | null = null; // lazy — IR generation is deferred to first use
+  private sustainEnabled = false;
 
   constructor(id: number) {
     this.id = id;
@@ -61,24 +62,23 @@ export class TrackAudioLayer {
       this.synth.dispose();
     }
     let synth: Tone.PolySynth;
+    let maxPolyphony = 8;
     switch (type) {
       case 'FM':
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 8,
           oscillator: { type: 'fmsine2', modulationIndex: 3, harmonicity: 1.5 },
           envelope: { attack: 0.03, decay: 0.3, sustain: 0.5, release: 0.5 },
         });
         break;
       case 'Electric Piano':
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 8,
           oscillator: { type: 'fmsine4', modulationIndex: 8, harmonicity: 3.5 },
           envelope: { attack: 0.01, decay: 0.8, sustain: 0.1, release: 0.6 },
         });
         break;
       case 'Pad':
+        maxPolyphony = 6;
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 6,
           oscillator: { type: 'amsine4', harmonicity: 2 },
           envelope: { attack: 0.6, decay: 0.2, sustain: 0.9, release: 1.2 },
         });
@@ -86,12 +86,12 @@ export class TrackAudioLayer {
       case 'Subtractive':
       default:
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 8,
           oscillator: { type: 'sawtooth' },
           envelope: { attack: 0.02, decay: 0.15, sustain: 0.6, release: 0.4 },
         });
         break;
     }
+    synth.maxPolyphony = maxPolyphony;
     synth.volume.value = -8;
     synth.connect(this.chorus);
     return synth;
@@ -105,6 +105,8 @@ export class TrackAudioLayer {
   }
 
   public setEffects(state: EffectsState) {
+    const wasSustaining = this.sustainEnabled;
+    this.sustainEnabled = state.sustain;
     // Smoothly ramp wet values to avoid clicking
     const rampTime = 0.1;
     this.chorus.wet.rampTo(state.chorus ? 0.6 : 0, rampTime);
@@ -116,6 +118,7 @@ export class TrackAudioLayer {
     } else if (this.reverb) {
       this.reverb.wet.rampTo(0, rampTime);
     }
+    if (wasSustaining && !this.sustainEnabled) this.releaseAll();
   }
 
   public setVolume(vol: number) {
@@ -127,6 +130,10 @@ export class TrackAudioLayer {
     this.volumeNode.mute = isMuted || (anySoloActive && !isSoloed);
   }
 
+  public connectRecorder(recorder: Tone.Recorder) {
+    this.limiter.connect(recorder);
+  }
+
   public triggerAttack(notes: string[], velocity: number, time?: number | string) {
     const safeVelocity = Math.max(0.1, Math.min(0.85, velocity));
     this.synth.triggerAttack(notes, time ?? Tone.now(), safeVelocity);
@@ -136,12 +143,26 @@ export class TrackAudioLayer {
     this.synth.triggerRelease(notes, time ?? Tone.now());
   }
 
-  public triggerAttackRelease(notes: string[], duration: number, time: number, velocity: number) {
+  public triggerAttackRelease(notes: string[], duration: number | string, time: number, velocity: number) {
     const safeVelocity = Math.max(0.1, Math.min(0.85, velocity));
-    this.synth.triggerAttackRelease(notes, duration, time, safeVelocity);
+    const playbackDuration = this.sustainEnabled
+      ? Tone.Time(duration).toSeconds() + Tone.Time('8n').toSeconds()
+      : duration;
+    this.synth.triggerAttackRelease(notes, playbackDuration, time, safeVelocity);
   }
 
   public releaseAll() {
     this.synth.releaseAll(Tone.now());
+  }
+
+  public dispose() {
+    this.releaseAll();
+    this.synth.dispose();
+    this.chorus.dispose();
+    this.bitcrusher.dispose();
+    this.delay.dispose();
+    this.reverb?.dispose();
+    this.volumeNode.dispose();
+    this.limiter.dispose();
   }
 }
