@@ -56,6 +56,7 @@ interface MidiLearnState {
   cancelLearn: () => void;
   removeMapping: (cc: number) => void;
   clearAll: () => void;
+  replaceMappings: (mappings: CcMapping[]) => void;
   /**
    * Must be called for every incoming CC message.
    * - While in learn mode: records the mapping for `pendingTarget`.
@@ -86,6 +87,11 @@ export const useMidiLearnStore = create<MidiLearnState>((set, get) => ({
   clearAll: () => {
     save([]);
     set({ mappings: [] });
+  },
+
+  replaceMappings: (mappings) => {
+    save(mappings);
+    set({ mappings, isLearning: false, pendingTarget: null, pendingLabel: null });
   },
 
   applyCC: (cc, value) => {
