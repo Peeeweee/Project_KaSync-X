@@ -3,8 +3,8 @@ import type { InstrumentType, EffectsState } from '../store/musicState';
 export interface TrackEvent {
   notes: string[];
   velocity: number;
-  time: number;      // Tone.Transport time (e.g. 0.5, or ticks)
-  duration: number;  // seconds
+  tick: number;          // Position inside the loop, independent of BPM.
+  durationTicks: number; // Musical duration, independent of BPM.
 }
 
 export interface Track {
