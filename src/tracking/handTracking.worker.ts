@@ -1,51 +1,96 @@
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import type { HandTrackingWorkerRequest, HandTrackingWorkerResponse, TrackingBackend } from './workerProtocol';
 
 let handLandmarker: HandLandmarker | null = null;
 let lastVideoTime = -1;
 
-async function init() {
+function respond(message: HandTrackingWorkerResponse) {
+  self.postMessage(message);
+}
+
+async function createLandmarker(
+  wasmRoot: string,
+  modelAssetPath: string,
+): Promise<{ landmarker: HandLandmarker; backend: TrackingBackend }> {
+  const vision = await FilesetResolver.forVisionTasks(wasmRoot);
+  const sharedOptions = {
+    runningMode: 'VIDEO' as const,
+    numHands: 2,
+    minHandDetectionConfidence: 0.6,
+    minHandPresenceConfidence: 0.6,
+    minTrackingConfidence: 0.5,
+  };
+
   try {
-    const vision = await FilesetResolver.forVisionTasks(
-      self.location.origin + '/wasm'
-    );
-
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath:
-          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numHands: 2,
-      minHandDetectionConfidence: 0.5,
-      minHandPresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+    const landmarker = await HandLandmarker.createFromOptions(vision, {
+      ...sharedOptions,
+      baseOptions: { modelAssetPath, delegate: 'GPU' },
     });
-
-    self.postMessage({ type: 'INIT_DONE' });
-  } catch (error) {
-    console.error('Failed to initialize HandLandmarker:', error);
-    self.postMessage({ type: 'INIT_ERROR', error: String(error) });
+    return { landmarker, backend: 'worker-gpu' };
+  } catch {
+    const landmarker = await HandLandmarker.createFromOptions(vision, {
+      ...sharedOptions,
+      baseOptions: { modelAssetPath, delegate: 'CPU' },
+    });
+    return { landmarker, backend: 'worker-cpu' };
   }
 }
 
-self.onmessage = (e) => {
-  const { type, image, timestamp } = e.data;
+async function initialize(wasmRoot: string, modelAssetPath: string) {
+  try {
+    handLandmarker?.close();
+    const result = await createLandmarker(wasmRoot, modelAssetPath);
+    handLandmarker = result.landmarker;
+    lastVideoTime = -1;
+    respond({ type: 'INIT_DONE', backend: result.backend });
+  } catch (error) {
+    respond({ type: 'INIT_ERROR', error: String(error) });
+  }
+}
 
-  if (type === 'INIT') {
-    init();
-  } else if (type === 'PROCESS' && handLandmarker && image) {
-    if (timestamp > lastVideoTime) {
-      const results = handLandmarker.detectForVideo(image, timestamp);
-      lastVideoTime = timestamp;
-
-      self.postMessage({
+function processFrame(image: ImageBitmap, timestamp: number, requestId: number) {
+  const startedAt = performance.now();
+  try {
+    if (!handLandmarker) throw new Error('Hand tracker is not initialized.');
+    if (timestamp <= lastVideoTime) {
+      respond({
         type: 'RESULTS',
-        landmarks: results.landmarks,
-        handednesses: results.handednesses,
+        requestId,
+        landmarks: [],
+        handednesses: [],
+        inferenceMs: 0,
       });
+      return;
     }
-    // Always close the ImageBitmap to prevent memory leaks
+
+    const results = handLandmarker.detectForVideo(image, timestamp);
+    lastVideoTime = timestamp;
+    respond({
+      type: 'RESULTS',
+      requestId,
+      landmarks: results.landmarks,
+      handednesses: results.handednesses,
+      inferenceMs: performance.now() - startedAt,
+    });
+  } catch (error) {
+    respond({ type: 'PROCESS_ERROR', requestId, error: String(error) });
+  } finally {
     image.close();
+  }
+}
+
+self.onmessage = (event: MessageEvent<HandTrackingWorkerRequest>) => {
+  const message = event.data;
+  switch (message.type) {
+    case 'INIT':
+      void initialize(message.wasmRoot, message.modelAssetPath);
+      break;
+    case 'PROCESS':
+      processFrame(message.image, message.timestamp, message.requestId);
+      break;
+    case 'DISPOSE':
+      handLandmarker?.close();
+      handLandmarker = null;
+      break;
   }
 };
