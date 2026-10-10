@@ -6,6 +6,7 @@ import type { EffectsState } from '../store/musicState';
 import { useLooperStore } from '../store/looperState';
 import { formatChordName } from '../music/enharmonics';
 import { getScreenHands } from '../tracking/handUtils';
+import type { SongSection } from '../store/songStore';
 
 const SIZE = 420;
 const CENTER = 210;
@@ -55,11 +56,11 @@ function SongHUD({
   onSelect: (idx: number) => void;
 }) {
   return (
-    <div className="absolute top-[15%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 flex flex-col items-center">
+    <div className="kasync-song-hud absolute left-1/2 -translate-x-1/2 z-40 flex flex-col items-center">
       {/* Current song section info */}
       <div className="mb-6 flex flex-col items-center">
         <span className="text-[10px] tracking-[0.3em] font-mono text-[#F78FB3] uppercase opacity-90 drop-shadow-[0_0_8px_rgba(247,143,179,0.5)]">
-          ♪ SONG MODE — {useSongStore.getState().songs.find(s => s.id === useSongStore.getState().activeSongId)?.title ?? 'NEW SONG'}
+          ♪ SONG MODE — {useSongStore.getState().songs.find(s => s.id === useSongStore.getState().activeSongId)?.name ?? 'NEW SONG'}
         </span>
       </div>
 
@@ -113,7 +114,7 @@ function ChordWheel({
   sectionKey,
   sectionColor,
 }: {
-  activeSection: any;
+  activeSection: SongSection;
   sectionKey: string;
   sectionColor: string;
 }) {
@@ -125,6 +126,8 @@ function ChordWheel({
   useEffect(() => {
     if (!activeSection || activeSection.chords.length === 0) {
       setHoveredIndex(null);
+      prevHoveredRef.current = null;
+      setMusicState({ hoveredRoot: null, hoveredQuality: null, hoveredBass: null });
       if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
       return;
     }
@@ -134,13 +137,18 @@ function ChordWheel({
       const { leftHand: hand } = getScreenHands(hands);
       if (!state.isTracking || !hand) {
         setHoveredIndex(null);
+        prevHoveredRef.current = null;
+        setMusicState(prev => prev.hoveredRoot === null && prev.hoveredQuality === null && prev.hoveredBass === null
+          ? prev
+          : { hoveredRoot: null, hoveredQuality: null, hoveredBass: null });
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
         return;
       }
 
-      // Center of ChordWheel is at (25% screen width, 50% screen height)
-      const centerX = window.innerWidth * 0.25;
-      const centerY = window.innerHeight * 0.50;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0) return;
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
       const handX = hand.indexTipPosition.x * window.innerWidth;
       const handY = hand.indexTipPosition.y * window.innerHeight;
 
@@ -148,9 +156,13 @@ function ChordWheel({
       const dy = handY - centerY;
       const dist = Math.hypot(dx, dy);
 
-      // Dead zone: inner center hub (< 35px) or outside wheel (> 260px)
-      if (dist < 35 || dist > 260) {
+      const scale = rect.width / SIZE;
+      if (dist < INNER_R * scale || dist > (OUTER_R + 14) * scale) {
         setHoveredIndex(null);
+        prevHoveredRef.current = null;
+        setMusicState(prev => prev.hoveredRoot === null && prev.hoveredQuality === null && prev.hoveredBass === null
+          ? prev
+          : { hoveredRoot: null, hoveredQuality: null, hoveredBass: null });
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
         return;
       }
@@ -172,35 +184,24 @@ function ChordWheel({
       if (adj >= 2 * Math.PI) adj -= 2 * Math.PI;
 
       const idx = Math.floor(adj / sliceAngle) % numSlices;
+      const chord = activeSection.chords[idx];
+      if (chord && idx !== prevHoveredRef.current) {
+        setMusicState(prev => (
+          prev.hoveredRoot === chord.root &&
+          prev.hoveredQuality === chord.quality &&
+          prev.hoveredBass === (chord.bass ?? null)
+        ) ? prev : {
+          hoveredRoot: chord.root,
+          hoveredQuality: chord.quality,
+          hoveredBass: chord.bass ?? null,
+        });
+      }
+      prevHoveredRef.current = idx;
       setHoveredIndex(idx);
     });
 
     return unsub;
-  }, [activeSection]);
-
-  useEffect(() => {
-    if (hoveredIndex === prevHoveredRef.current) return;
-    prevHoveredRef.current = hoveredIndex;
-
-    if (activeSection && hoveredIndex !== null) {
-      const chord = activeSection.chords[hoveredIndex];
-      if (chord) {
-        setMusicState(prev => {
-          if (prev.hoveredRoot === chord.root && prev.hoveredQuality === chord.quality && prev.hoveredBass === (chord.bass ?? null)) return prev;
-          return {
-            hoveredRoot: chord.root,
-            hoveredQuality: chord.quality,
-            hoveredBass: chord.bass ?? null,
-          };
-        });
-        return;
-      }
-    }
-    setMusicState(prev => {
-      if (prev.hoveredRoot === null && prev.hoveredQuality === null && prev.hoveredBass === null) return prev;
-      return { hoveredRoot: null, hoveredQuality: null, hoveredBass: null };
-    });
-  }, [hoveredIndex, activeSection, setMusicState]);
+  }, [activeSection, setMusicState]);
 
   const chords = activeSection?.chords ?? [];
   const numSlices = chords.length;
@@ -210,15 +211,12 @@ function ChordWheel({
   return (
     <div
       ref={containerRef}
-      className="absolute z-30 pointer-events-none"
+      className="kasync-song-wheel kasync-performance-wheel kasync-performance-wheel--left absolute z-30 pointer-events-none"
       style={{
-        top: '50%',
-        left: '25%', // Left side
         transform: 'translate(-50%, -50%)',
-        transition: 'transform 0.08s ease-out',
       }}
     >
-      <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[420px] max-h-[420px]">
+      <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
         <circle
           cx={CENTER} cy={CENTER} r={OUTER_R + 14}
           fill="none" stroke={sectionColor} strokeWidth="0.5" opacity="0.25" strokeDasharray="6 10"
@@ -250,7 +248,7 @@ function ChordWheel({
         )}
 
         <g transform={`translate(${CENTER}, ${CENTER})`}>
-          {chords.map((chord: any, index: number) => {
+          {chords.map((chord, index: number) => {
             const isActive = index === hoveredIndex;
             const startDeg = index * sliceDeg - 90 - sliceDeg / 2 + GAP_DEG / 2;
             const endDeg = (index + 1) * sliceDeg - 90 - sliceDeg / 2 - GAP_DEG / 2;
@@ -311,13 +309,16 @@ function FxWheel() {
       const { rightHand: hand } = getScreenHands(hands);
       if (!state.isTracking || !hand) {
         setHoveredIndex(null);
+        prevHoveredRef.current = null;
+        setMusicState(prev => prev.hoveredEffect === null ? prev : { hoveredEffect: null });
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
         return;
       }
 
-      // Center of FxWheel is at (75% screen width, 50% screen height)
-      const centerX = window.innerWidth * 0.75;
-      const centerY = window.innerHeight * 0.50;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0) return;
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
       const handX = hand.indexTipPosition.x * window.innerWidth;
       const handY = hand.indexTipPosition.y * window.innerHeight;
 
@@ -325,9 +326,11 @@ function FxWheel() {
       const dy = handY - centerY;
       const dist = Math.hypot(dx, dy);
 
-      // Dead zone: inner center hub (< 35px) or outside wheel (> 260px)
-      if (dist < 35 || dist > 260) {
+      const scale = rect.width / SIZE;
+      if (dist < INNER_R * scale || dist > (OUTER_R + 14) * scale) {
         setHoveredIndex(null);
+        prevHoveredRef.current = null;
+        setMusicState(prev => prev.hoveredEffect === null ? prev : { hoveredEffect: null });
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
         return;
       }
@@ -349,22 +352,16 @@ function FxWheel() {
       if (adj >= 2 * Math.PI) adj -= 2 * Math.PI;
 
       const idx = Math.floor(adj / sliceAngle) % numSlices;
+      if (idx !== prevHoveredRef.current) {
+        const effect = FX_LIST[idx].id;
+        setMusicState(prev => prev.hoveredEffect === effect ? prev : { hoveredEffect: effect });
+      }
+      prevHoveredRef.current = idx;
       setHoveredIndex(idx);
     });
 
     return unsub;
-  }, []);
-
-  useEffect(() => {
-    if (hoveredIndex === prevHoveredRef.current) return;
-    prevHoveredRef.current = hoveredIndex;
-
-    if (hoveredIndex !== null) {
-      setMusicState(prev => prev.hoveredEffect === FX_LIST[hoveredIndex].id ? prev : { hoveredEffect: FX_LIST[hoveredIndex].id });
-    } else {
-      setMusicState(prev => prev.hoveredEffect === null ? prev : { hoveredEffect: null });
-    }
-  }, [hoveredIndex, setMusicState]);
+  }, [setMusicState]);
 
   const numSlices = FX_LIST.length;
   const sliceDeg = 360 / numSlices;
@@ -372,15 +369,12 @@ function FxWheel() {
   return (
     <div
       ref={containerRef}
-      className="absolute z-30 pointer-events-none"
+      className="kasync-song-wheel kasync-performance-wheel kasync-performance-wheel--right absolute z-30 pointer-events-none"
       style={{
-        top: '50%',
-        left: '75%', // Right side
         transform: 'translate(-50%, -50%)',
-        transition: 'transform 0.08s ease-out',
       }}
     >
-      <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[420px] max-h-[420px]">
+      <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
         <circle
           cx={CENTER} cy={CENTER} r={OUTER_R + 14}
           fill="none" stroke="#6E7C9C" strokeWidth="0.5" opacity="0.25" strokeDasharray="6 10"
@@ -463,7 +457,7 @@ export function SongPalette() {
   }, [mode]);
 
   // Fallback section for when no song is loaded — always have something to play
-  const fallbackSection = useMemo(() => ({
+  const fallbackSection = useMemo<SongSection>(() => ({
     id: 'fallback',
     name: 'FREE',
     colorTag: '#9D4EDD',
