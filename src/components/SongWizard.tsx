@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import type { Song, SongSection, SongChord } from '../store/songStore';
+import { useState } from 'react';
+import type { Song, SongSection } from '../store/songStore';
 import { CHROMATIC_NOTES } from '../music/scales';
 import { CHORD_QUALITIES } from '../music/chords';
 
@@ -71,8 +71,6 @@ function parseSongText(title: string, artist: string, text: string): Song {
     // Try to parse chords from the line. E.g., "Cmaj7 G/B Am Fm"
     // We split by spaces
     const tokens = line.split(/\s+/);
-    let lineHasChords = false;
-
     for (const token of tokens) {
       // Very basic regex to extract root, quality, bass
       // Matches A-G with optional #/b, then quality string, then optional /Bass
@@ -111,7 +109,6 @@ function parseSongText(title: string, artist: string, text: string): Song {
           if (!basicQualities.includes(qual)) qual = 'maj'; // fallback
 
           currentSection.chords.push({ root, quality: qual, bass: isValidRoot(bass) ? bass : undefined });
-          lineHasChords = true;
         }
       }
     }
