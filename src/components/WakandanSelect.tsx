@@ -1,4 +1,4 @@
-import { SelectHTMLAttributes, ReactNode } from 'react';
+import type { SelectHTMLAttributes, ReactNode } from 'react';
 
 interface WakandanSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   color?: string; // e.g. 'var(--color-primary-glow)' or '#00f0ff'
@@ -19,8 +19,8 @@ export function WakandanSelect({ color = 'var(--color-primary-glow)', children, 
 
       <select
         {...props}
-        className={`appearance-none bg-transparent font-mono uppercase outline-none cursor-pointer text-ellipsis overflow-hidden whitespace-nowrap pl-2 pr-6 py-1 ${className}`}
-        style={{ color }}
+        className={`appearance-none bg-transparent font-display font-bold uppercase tracking-widest text-[9px] outline-none cursor-pointer text-ellipsis overflow-hidden whitespace-nowrap pl-2 pr-5 py-[1px] leading-none ${className}`}
+        style={{ color, fontSize: '9px' }}
       >
         {children}
       </select>
