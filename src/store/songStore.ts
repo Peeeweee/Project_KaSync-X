@@ -32,6 +32,8 @@ interface SongModeState {
   activeSongId: string | null;
   activeSectionIndex: number;
   activeChordIndexInSection: number;
+  activeSectionRepeat: number;
+  autoAdvanceEnabled: boolean;
   isSongPanelOpen: boolean;
 
   // Actions
@@ -40,10 +42,35 @@ interface SongModeState {
   setActiveSection: (index: number) => void;
   nextSection: () => void;
   prevSection: () => void;
+  setAutoAdvance: (enabled: boolean) => void;
+  advanceSongCycle: () => boolean;
+  replaceLibrary: (songs: Song[], activeSongId: string | null) => void;
 
   // CRUD
   saveSong: (song: Song) => void;
   deleteSong: (id: string) => void;
+}
+
+export interface SongPlaybackPosition {
+  sectionIndex: number;
+  repeat: number;
+  completed: boolean;
+}
+
+export function getNextSongPlaybackPosition(
+  song: Song,
+  sectionIndex: number,
+  repeat: number,
+): SongPlaybackPosition {
+  const section = song.sections[sectionIndex];
+  if (!section) return { sectionIndex: 0, repeat: 1, completed: true };
+  if (repeat < Math.max(1, section.repeatCount)) {
+    return { sectionIndex, repeat: repeat + 1, completed: false };
+  }
+  if (sectionIndex < song.sections.length - 1) {
+    return { sectionIndex: sectionIndex + 1, repeat: 1, completed: false };
+  }
+  return { sectionIndex, repeat, completed: true };
 }
 
 const STORAGE_KEY = 'kasync-songs-v2';
@@ -136,6 +163,8 @@ export const useSongStore = create<SongModeState>((set, get) => {
     activeSongId: initialId,
     activeSectionIndex: 0,
     activeChordIndexInSection: 0,
+    activeSectionRepeat: 1,
+    autoAdvanceEnabled: true,
     isSongPanelOpen: false,
 
     toggleSongPanel: () => set(s => ({ isSongPanelOpen: !s.isSongPanelOpen })),
@@ -144,6 +173,7 @@ export const useSongStore = create<SongModeState>((set, get) => {
       activeSongId: id,
       activeSectionIndex: 0,
       activeChordIndexInSection: 0,
+      activeSectionRepeat: 1,
     }),
 
     setActiveSection: (index) => {
@@ -151,7 +181,7 @@ export const useSongStore = create<SongModeState>((set, get) => {
       const song = songs.find(s => s.id === activeSongId);
       if (!song) return;
       const safe = Math.max(0, Math.min(index, song.sections.length - 1));
-      set({ activeSectionIndex: safe, activeChordIndexInSection: 0 });
+      set({ activeSectionIndex: safe, activeChordIndexInSection: 0, activeSectionRepeat: 1 });
     },
 
     nextSection: () => {
@@ -159,15 +189,45 @@ export const useSongStore = create<SongModeState>((set, get) => {
       const song = songs.find(s => s.id === activeSongId);
       if (!song) return;
       if (activeSectionIndex < song.sections.length - 1) {
-        set({ activeSectionIndex: activeSectionIndex + 1, activeChordIndexInSection: 0 });
+        set({ activeSectionIndex: activeSectionIndex + 1, activeChordIndexInSection: 0, activeSectionRepeat: 1 });
       }
     },
 
     prevSection: () => {
       const { activeSectionIndex } = get();
       if (activeSectionIndex > 0) {
-        set({ activeSectionIndex: activeSectionIndex - 1, activeChordIndexInSection: 0 });
+        set({ activeSectionIndex: activeSectionIndex - 1, activeChordIndexInSection: 0, activeSectionRepeat: 1 });
       }
+    },
+
+    setAutoAdvance: (enabled) => set({ autoAdvanceEnabled: enabled }),
+
+    advanceSongCycle: () => {
+      const { songs, activeSongId, activeSectionIndex, activeSectionRepeat } = get();
+      const song = songs.find(candidate => candidate.id === activeSongId);
+      if (!song) return false;
+      const next = getNextSongPlaybackPosition(song, activeSectionIndex, activeSectionRepeat);
+      if (next.completed) return false;
+      set({
+        activeSectionIndex: next.sectionIndex,
+        activeSectionRepeat: next.repeat,
+        activeChordIndexInSection: 0,
+      });
+      return true;
+    },
+
+    replaceLibrary: (songs, activeSongId) => {
+      persistSongs(songs);
+      const safeActiveId = songs.some(song => song.id === activeSongId)
+        ? activeSongId
+        : (songs[0]?.id ?? null);
+      set({
+        songs,
+        activeSongId: safeActiveId,
+        activeSectionIndex: 0,
+        activeChordIndexInSection: 0,
+        activeSectionRepeat: 1,
+      });
     },
 
     saveSong: (song) => set(s => {
@@ -188,6 +248,8 @@ export const useSongStore = create<SongModeState>((set, get) => {
       return {
         songs: next,
         activeSongId: s.activeSongId === id ? (next[0]?.id ?? null) : s.activeSongId,
+        activeSectionIndex: s.activeSongId === id ? 0 : s.activeSectionIndex,
+        activeSectionRepeat: s.activeSongId === id ? 1 : s.activeSectionRepeat,
       };
     }),
   };
