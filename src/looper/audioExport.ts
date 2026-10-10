@@ -2,8 +2,14 @@ import * as Tone from 'tone';
 import type { Track } from './trackModel';
 import { TrackAudioLayer } from '../audio/trackAudioLayer';
 import { toast } from '../store/toastStore';
+import type { TrackEvent } from './trackModel';
 
-export async function exportAudioWav(tracks: Track[], bpm: number): Promise<void> {
+export async function exportAudioWav(
+  tracks: Track[],
+  bpm: number,
+  loopBars: number = 4,
+  beatsPerBar: number = 4,
+): Promise<void> {
   const activeTracks = tracks.filter(t => t.events.length > 0 && !t.isMuted);
   
   if (activeTracks.length === 0) {
@@ -11,14 +17,14 @@ export async function exportAudioWav(tracks: Track[], bpm: number): Promise<void
     return;
   }
 
-  // Calculate exactly 4 bars in seconds
-  const beats = 16; 
+  const beats = loopBars * beatsPerBar;
   const duration = (beats / bpm) * 60;
 
   try {
     // Tone.Offline temporarily overrides Tone.context during the callback
     const buffer = await Tone.Offline(({ transport }) => {
       transport.bpm.value = bpm;
+      transport.timeSignature = beatsPerBar;
       
       activeTracks.forEach(track => {
         // Instantiate track layer in offline context
@@ -28,9 +34,10 @@ export async function exportAudioWav(tracks: Track[], bpm: number): Promise<void
         layer.setVolume(track.volume);
         
         // Schedule events on the offline transport
-        const part = new Tone.Part((time, event: any) => {
-          layer.triggerAttackRelease(event.notes, event.duration, time, event.velocity);
-        }, track.events).start(0);
+        const part = new Tone.Part<[string, TrackEvent]>((time, event) => {
+          layer.triggerAttackRelease(event.notes, `${event.durationTicks}i`, time, event.velocity);
+        }).start(0);
+        track.events.forEach(event => part.add(`${event.tick}i`, event));
         part.loop = false; // Render one pass
       });
 
