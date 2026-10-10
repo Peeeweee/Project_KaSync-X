@@ -7,7 +7,7 @@ export function TutorialOverlay() {
   const [isVisible, setIsVisible] = useState(false);
   
   const { smoothedHands } = useHandStore();
-  const { hoveredRoot, activeBass } = useMusicStore();
+  const { hoveredRoot, hoveredBass } = useMusicStore();
 
   useEffect(() => {
     const hasCompleted = localStorage.getItem('kasync_tutorial_completed');
@@ -34,22 +34,22 @@ export function TutorialOverlay() {
       setStep(3);
     }
     
-    if (step === 3 && isPinching && activeBass && activeBass !== hoveredRoot) {
+    if (step === 3 && isPinching && hoveredBass && hoveredBass !== hoveredRoot) {
       setStep(4);
     }
-  }, [smoothedHands, hoveredRoot, activeBass, step, isVisible]);
+  }, [smoothedHands, hoveredRoot, hoveredBass, step, isVisible]);
 
   if (!isVisible) return null;
 
   const isInteractiveStep = step > 0 && step < 4;
 
   return (
-    <div className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-none transition-all duration-500 ${isInteractiveStep ? 'bg-transparent' : 'bg-black/80 backdrop-blur-md'}`}>
+    <div role="dialog" aria-modal="true" aria-label="Kasync.x tutorial" className={`absolute inset-0 z-[150] flex items-center justify-center pointer-events-none transition-all duration-500 ${isInteractiveStep ? 'bg-transparent' : 'bg-black/80 backdrop-blur-md'}`}>
       
       <div className={`bg-[var(--color-bg-elevated)] border border-[var(--color-primary-glow)] beveled-panel p-8 max-w-md pointer-events-auto shadow-[0_0_30px_var(--color-primary-glow)] flex flex-col items-center text-center gap-6 transition-all duration-500 ${isInteractiveStep ? 'absolute top-8 translate-y-0 scale-90 opacity-90' : 'scale-100'}`}>
         
         <h2 className="text-xl font-bold text-white tracking-widest uppercase">
-          {step === 0 && "Welcome to Kasync-Kasync"}
+          {step === 0 && "Welcome to Kasync.x"}
           {step === 1 && "Step 1: The Pinch"}
           {step === 2 && "Step 2: The Wheels"}
           {step === 3 && "Step 3: Slash Chords"}
