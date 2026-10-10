@@ -21,10 +21,11 @@ const FALLBACK_RELEASE_MS = 8000;
 export class InstrumentService {
   private synth: Tone.PolySynth;
   private limiter: Tone.Limiter;
-  private activeInstrument: InstrumentType = 'Subtractive';
   private currentEffectsState: EffectsState | null = null;
   private currentNotes: string[] = [];
   private isPlaying: boolean = false;
+  private sustainEnabled = false;
+  private pendingSustainRelease = false;
   
   // Failsafe watchdog to prevent hanging notes if release is missed
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -35,7 +36,7 @@ export class InstrumentService {
   private reverb: Tone.Reverb | null = null;
 
   // AudioContext watchdog — resumes if browser auto-suspends it
-  private watchdogInterval: ReturnType<typeof setInterval> | null = null;
+  private unsubscribeMusicStore: () => void;
 
   constructor() {
     this.limiter = new Tone.Limiter(-3).toDestination(); // -3dBFS ceiling keeps peaks pristine without clipping
@@ -53,16 +54,10 @@ export class InstrumentService {
     // Build the direct effect chain
     this.chorus.chain(this.bitcrusher, this.delay, this.limiter);
 
-    this.synth = this.buildSynth('Subtractive');
+    this.synth = this.buildSynth(useMusicStore.getState().currentInstrument);
 
     // AudioContext watchdog — auto-resumes if the browser suspends it
-    this.watchdogInterval = setInterval(() => {
-      if (Tone.context.state === 'suspended') {
-        Tone.context.resume().catch(() => {});
-      }
-    }, 2000);
-
-    useMusicStore.subscribe((state, prevState) => {
+    this.unsubscribeMusicStore = useMusicStore.subscribe((state, prevState) => {
       if (state.currentInstrument !== prevState.currentInstrument) {
         this.switchInstrument(state.currentInstrument);
       }
@@ -72,7 +67,7 @@ export class InstrumentService {
   private buildSynth(type: InstrumentType): Tone.PolySynth {
     // Dispose old synth if switching
     if (this.synth) {
-      this.synth.releaseAll();
+      this.synth.releaseAll(Tone.immediate());
       this.synth.disconnect();
       this.synth.dispose();
     }
@@ -83,37 +78,34 @@ export class InstrumentService {
       case 'FM':
         // Warm FM bell — gentle modulation, clear attack
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 16,
-          oscillator: { type: 'fmsine2', modulationIndex: 3, harmonicity: 1.5 } as any,
-          envelope: { attack: 0.03, decay: 0.3, sustain: 0.5, release: 0.4 },
+          oscillator: { type: 'fmsine2', modulationIndex: 3, harmonicity: 1.5 },
+          envelope: { attack: 0.008, decay: 0.3, sustain: 0.5, release: 0.28 },
         });
         break;
       case 'Electric Piano':
         // Rhodes-style: fast attack, long decay, low sustain
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 16,
-          oscillator: { type: 'fmsine4', modulationIndex: 8, harmonicity: 3.5 } as any,
-          envelope: { attack: 0.01, decay: 0.8, sustain: 0.1, release: 0.5 },
+          oscillator: { type: 'fmsine4', modulationIndex: 8, harmonicity: 3.5 },
+          envelope: { attack: 0.005, decay: 0.8, sustain: 0.1, release: 0.35 },
         });
         break;
       case 'Pad':
         // Lush pad — slow attack, long release
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 16,
-          oscillator: { type: 'amsine4', harmonicity: 2 } as any,
-          envelope: { attack: 0.6, decay: 0.2, sustain: 0.9, release: 1.0 },
+          oscillator: { type: 'amsine4', harmonicity: 2 },
+          envelope: { attack: 0.12, decay: 0.25, sustain: 0.82, release: 0.55 },
         });
         break;
       case 'Subtractive':
       default:
         // Classic analog-style sawtooth — warm and musical
         synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 16,
           oscillator: { type: 'sawtooth' },
-          envelope: { attack: 0.02, decay: 0.15, sustain: 0.6, release: 0.3 },
+          envelope: { attack: 0.006, decay: 0.15, sustain: 0.6, release: 0.22 },
         });
         break;
     }
+    synth.maxPolyphony = 16;
     synth.volume.value = -8; // Loud, clear, punchy volume with headroom for chords
     synth.connect(this.chorus);
     return synth;
@@ -122,34 +114,14 @@ export class InstrumentService {
   private resetWatchdog() {
     if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
     this.watchdogTimer = setTimeout(() => {
-      this.releaseChord(true);
+      this.releaseVoices();
     }, FALLBACK_RELEASE_MS);
-  }
-
-  public async startAudioContext() {
-    await Tone.start();
-    if (Tone.context.state !== 'running') {
-      await Tone.context.resume();
-    }
-    Tone.Destination.volume.value = 0;
-    Tone.Destination.mute = false;
-    // Keep context alive: resume on any subsequent user gesture.
-    // Browsers auto-suspend after ~1 minute of no interaction.
-    const resumeOnGesture = () => {
-      if (Tone.context.state !== 'running') {
-        Tone.context.resume().catch(() => {});
-      }
-    };
-    document.addEventListener('click',      resumeOnGesture);
-    document.addEventListener('touchstart', resumeOnGesture);
-    document.addEventListener('keydown',    resumeOnGesture);
   }
 
   private switchInstrument(newInstrument: InstrumentType) {
     const wasPlaying = this.isPlaying;
     const notes = [...this.currentNotes];
-    this.releaseChord();
-    this.activeInstrument = newInstrument;
+    this.releaseVoices();
     this.synth = this.buildSynth(newInstrument);
     if (wasPlaying && notes.length > 0) {
       this.triggerChord(notes, 0.7);
@@ -162,13 +134,7 @@ export class InstrumentService {
       Tone.context.resume().catch(() => {});
     }
 
-    // Ensure Tone master output is unmuted and audible
-    if (Tone.Destination.volume.value < -12) {
-      Tone.Destination.volume.value = 0;
-    }
-    if (Tone.Destination.mute) {
-      Tone.Destination.mute = false;
-    }
+
 
     // Musically audible velocity (0.6 to 1.0)
     const safeVelocity = Math.max(0.6, Math.min(1.0, 0.4 + velocity * 0.6));
@@ -182,6 +148,7 @@ export class InstrumentService {
 
     // Same chord already playing — do nothing
     if (!notesChanged && this.isPlaying) {
+      this.pendingSustainRelease = false;
       this.resetWatchdog();
       return;
     }
@@ -190,18 +157,30 @@ export class InstrumentService {
       this.setEffects(this.currentEffectsState);
     }
 
-    if (this.isPlaying) {
-      this.synth.releaseAll();
-    }
+    const eventTime = Tone.immediate();
+    const notesToRelease = this.currentNotes.filter(note => !notes.includes(note));
+    const notesToAttack = notes.filter(note => !this.currentNotes.includes(note));
+    if (notesToRelease.length > 0) this.synth.triggerRelease(notesToRelease, eventTime);
 
     this.currentNotes = [...notes];
     this.isPlaying    = true;
+    this.pendingSustainRelease = false;
 
-    this.synth.triggerAttack(notes, Tone.now(), safeVelocity);
+    // Live input should bypass Tone's scheduler look-ahead.
+    if (notesToAttack.length > 0) this.synth.triggerAttack(notesToAttack, eventTime, safeVelocity);
     this.resetWatchdog();
   }
 
-  public releaseChord(_gradual: boolean = false) {
+  public releaseChord(gradual: boolean = false) {
+    void gradual;
+    if (this.sustainEnabled && this.isPlaying) {
+      this.pendingSustainRelease = true;
+      return;
+    }
+    this.releaseVoices();
+  }
+
+  private releaseVoices() {
     if (this.watchdogTimer) {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
@@ -209,13 +188,14 @@ export class InstrumentService {
     
     if (this.isPlaying) {
       if (this.currentNotes.length > 0) {
-        this.synth.triggerRelease(this.currentNotes, Tone.now());
+        this.synth.triggerRelease(this.currentNotes, Tone.immediate());
       }
-      this.synth.releaseAll();
+      this.synth.releaseAll(Tone.immediate());
     }
     
     this.isPlaying    = false;
     this.currentNotes = [];
+    this.pendingSustainRelease = false;
   }
 
   /** Emergency voice panic — rebuilds the synth entirely to clear all stuck voices. */
@@ -224,9 +204,10 @@ export class InstrumentService {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
     }
-    this.synth.releaseAll(Tone.now());
+    this.synth.releaseAll(Tone.immediate());
     this.isPlaying    = false;
     this.currentNotes = [];
+    this.pendingSustainRelease = false;
   }
 
   private getOrCreateReverb(): Tone.Reverb {
@@ -241,6 +222,8 @@ export class InstrumentService {
 
   public setEffects(state: EffectsState) {
     this.currentEffectsState = state;
+    const wasSustaining = this.sustainEnabled;
+    this.sustainEnabled = state.sustain;
     const rampTime = 0.1;
     this.chorus.wet.rampTo(state.chorus      ? 0.5 : 0, rampTime);
     this.bitcrusher.wet.rampTo(state.bitcrusher ? 0.7 : 0, rampTime);
@@ -251,6 +234,9 @@ export class InstrumentService {
     } else if (this.reverb) {
       this.reverb.wet.rampTo(0, rampTime);
     }
+    if (wasSustaining && !this.sustainEnabled && this.pendingSustainRelease) {
+      this.releaseVoices();
+    }
   }
 
   public triggerNote(note: string, velocity: number) {
@@ -260,6 +246,20 @@ export class InstrumentService {
   public releaseNote(gradual: boolean = false) {
     this.releaseChord(gradual);
   }
-}
 
-export const instrument = new InstrumentService();
+  public connectRecorder(recorder: Tone.Recorder) {
+    this.limiter.connect(recorder);
+  }
+
+  public dispose() {
+    if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
+    this.unsubscribeMusicStore();
+    this.synth.releaseAll();
+    this.synth.dispose();
+    this.chorus.dispose();
+    this.bitcrusher.dispose();
+    this.delay.dispose();
+    this.reverb?.dispose();
+    this.limiter.dispose();
+  }
+}
