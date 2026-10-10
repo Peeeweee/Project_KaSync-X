@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useHandStore } from '../store/handState';
 import { useMusicStore } from '../store/musicState';
 import { CHROMATIC_NOTES, getActiveNoteIndex } from '../music/scales';
@@ -9,8 +9,9 @@ export function getWedgePath(
   outerRadius: number,
   angleSpanDegrees: number
 ) {
-  const startAngle = -angleSpanDegrees / 2;
-  const endAngle = angleSpanDegrees / 2;
+  const gap = 1.5;
+  const startAngle = -angleSpanDegrees / 2 + gap;
+  const endAngle = angleSpanDegrees / 2 - gap;
 
   const toRad = (deg: number) => (deg * Math.PI) / 180;
 
@@ -41,20 +42,22 @@ export function getWedgePath(
 }
 
 export function RootWheel() {
-  const { currentScale, currentKey, snapToScale } = useMusicStore();
-  const setMusicState = useMusicStore((state) => state.setMusicState);
+  const currentScale = useMusicStore((state) => state.currentScale);
+  const currentKey = useMusicStore((state) => state.currentKey);
+  const snapToScale = useMusicStore((state) => state.snapToScale);
   const hoveredRoot = useMusicStore((state) => state.hoveredRoot);
   const hoveredBass = useMusicStore((state) => state.hoveredBass);
   const mode = useMusicStore((state) => state.mode);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const layoutCache = useRef({ width: 0, height: 0, left: 0, top: 0 });
 
-  const SIZE = mode === 'Chord' ? 400 : 500;
+  const SIZE = mode === 'Chord' ? 550 : 650;
   const CENTER = SIZE / 2;
-  const INNER_RADIUS = mode === 'Chord' ? 60 : 80;
-  const ROOT_RADIUS = mode === 'Chord' ? 140 : 180;
-  const BASS_RADIUS = mode === 'Chord' ? 180 : 230;
+  const INNER_RADIUS = mode === 'Chord' ? 90 : 110;
+  const ROOT_RADIUS = mode === 'Chord' ? 190 : 240;
+  const BASS_RADIUS = mode === 'Chord' ? 240 : 310;
 
   const rootWedge = useMemo(
     () => getWedgePath(INNER_RADIUS, ROOT_RADIUS, 30),
@@ -66,16 +69,29 @@ export function RootWheel() {
   );
 
   useEffect(() => {
+    if (!svgRef.current) return;
+    const observer = new ResizeObserver(() => {
+      if (svgRef.current) {
+        const rect = svgRef.current.getBoundingClientRect();
+        layoutCache.current = { width: rect.width, height: rect.height, left: rect.left, top: rect.top };
+      }
+    });
+    observer.observe(svgRef.current);
+    return () => observer.disconnect();
+  }, [mode]);
+
+  useEffect(() => {
     const unsub = useHandStore.subscribe((state) => {
       const music = useMusicStore.getState();
       const hands = state.smoothedHands;
       const { leftHand } = getScreenHands(hands);
-      const hand = music.mode === 'Chord' ? leftHand : (leftHand ?? hands[0]);
+      const hand = leftHand ?? hands[0];
 
       if (!state.isTracking || !hand) {
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
         if (music.hoveredRoot || music.hoveredBass) {
-          music.setMusicState({ hoveredRoot: null, hoveredBass: null });
+          if (hands.length === 0) music.setMusicState({ hoveredRoot: null, hoveredBass: null });
+          else music.setMusicState({ hoveredBass: null });
         }
         return;
       }
@@ -86,31 +102,31 @@ export function RootWheel() {
       let wheelCenterY = 0.5;
 
       if (svgRef.current) {
-        const rect = svgRef.current.getBoundingClientRect();
+        const rect = layoutCache.current;
         if (rect.width > 0 && rect.height > 0) {
           wheelCenterX = (rect.left + rect.width / 2) / (window.innerWidth || 1024);
           wheelCenterY = (rect.top + rect.height / 2) / (window.innerHeight || 768);
         }
       }
 
-      const dx = indexTipPosition.x - wheelCenterX;
-      const rawDy = indexTipPosition.y - wheelCenterY;
-
-      // Distance from wheel center in normalized screen space
-      const dist = Math.sqrt(dx * dx + rawDy * rawDy);
-
-      // Active zone thresholds (in normalized 0-1 screen units)
-      // The wheel SVG is ~450px on a ~1000px screen = ~0.45 of screen width
-      // Inner dead zone: inside the center hub
-      // Outer dead zone: too far from wheel
-      const INNER_DEAD = 0.04;  // inner hub, no selection here
-      const OUTER_DEAD = 0.28;  // outside ring, stop responding
+      const viewportWidth = window.innerWidth || 1024;
+      const viewportHeight = window.innerHeight || 768;
+      const dx = (indexTipPosition.x - wheelCenterX) * viewportWidth;
+      const rawDy = (indexTipPosition.y - wheelCenterY) * viewportHeight;
+      const dist = Math.hypot(dx, rawDy);
+      const measuredWidth = layoutCache.current.width;
+      const renderedSize = measuredWidth > 0 ? measuredWidth : 400;
+      const scale = renderedSize / SIZE;
+      const INNER_DEAD = INNER_RADIUS * scale;
+      const OUTER_DEAD = (BASS_RADIUS + 12) * scale;
 
       const isInActiveZone = dist >= INNER_DEAD && dist <= OUTER_DEAD;
 
       if (isInActiveZone) {
         if (containerRef.current) {
-          containerRef.current.style.transform = `translate(calc(-50% + ${dx * 80}px), calc(-50% + ${rawDy * 80}px))`;
+          const parallaxX = Math.max(-10, Math.min(10, dx * 0.04));
+          const parallaxY = Math.max(-10, Math.min(10, rawDy * 0.04));
+          containerRef.current.style.transform = `translate(calc(-50% + ${parallaxX}px), calc(-50% + ${parallaxY}px))`;
         }
 
         // Calculate angle where UP (12 o'clock) = 0, RIGHT (3 o'clock) = PI/2
@@ -118,7 +134,7 @@ export function RootWheel() {
         let angle = Math.atan2(dx, -rawDy);
         if (angle < 0) angle += 2 * Math.PI;
 
-        const isBassOverride = dist > 0.20;
+        const isBassOverride = dist > (ROOT_RADIUS + 3) * scale;
 
         const rootIndex = CHROMATIC_NOTES.indexOf(currentKey);
         const selectedIndex = getActiveNoteIndex(
@@ -146,7 +162,7 @@ export function RootWheel() {
         // Finger is OUTSIDE the active zone — freeze, silence
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
         if (music.hoveredRoot || music.hoveredBass) {
-          music.setMusicState({ hoveredRoot: null, hoveredBass: null });
+          music.setMusicState({ hoveredBass: null });
         }
       }
     });
@@ -171,14 +187,10 @@ export function RootWheel() {
   return (
     <div
       ref={containerRef}
-      className="absolute z-30 pointer-events-none drop-shadow-2xl transition-all duration-300 ease-out"
-      style={{ 
-        top: '50%', 
-        left: mode === 'Chord' ? '30%' : '50%',
-        transform: 'translate(-50%, -50%)' 
-      }}
+      className={`kasync-root-wheel kasync-performance-wheel ${mode === 'Chord' ? 'kasync-performance-wheel--left' : 'kasync-performance-wheel--solo'} absolute z-30 pointer-events-none drop-shadow-2xl`}
+      style={{ transform: 'translate(-50%, -50%)' }}
     >
-      <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[50vh] h-[50vh] max-w-[460px] max-h-[460px]">
+      <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
         {/* Holographic Concentric Rings */}
         <g style={{ transformOrigin: 'center' }} className="animate-spin-slow opacity-40">
           <circle cx={CENTER} cy={CENTER} r={BASS_RADIUS + 15} fill="none" stroke="var(--color-primary)" strokeWidth="1.5" strokeDasharray="4 12" />
@@ -208,11 +220,11 @@ export function RootWheel() {
               : 'var(--color-metal-light)';
 
             const rootClass = isRootActive
-              ? 'scale-[1.03] transition-all duration-150 drop-shadow-[0_0_20px_var(--color-primary-glow)]'
-              : 'animate-breathe transition-all duration-500 opacity-60';
+              ? 'opacity-100'
+              : 'animate-breathe opacity-60';
             const bassClass = isBassActive
-              ? 'scale-[1.02] transition-all duration-150 drop-shadow-[0_0_15px_var(--color-highlight)]'
-              : 'animate-breathe transition-all duration-500 opacity-20';
+              ? 'opacity-100'
+              : 'animate-breathe opacity-20';
 
             const angleDeg = index * 30 - 90;
             const angleRad = (angleDeg * Math.PI) / 180;
@@ -241,14 +253,14 @@ export function RootWheel() {
                   x={rx}
                   y={ry}
                   fill={isRootActive ? "white" : "var(--color-primary-glow)"}
-                  fontSize="14"
+                  fontSize="12"
                   fontWeight="bold"
                   letterSpacing="2"
                   textAnchor="middle"
                   alignmentBaseline="middle"
                   opacity={isRootActive ? 1 : 0.6}
                   className="pointer-events-none"
-                  style={{ textShadow: isRootActive ? '0 0 10px white' : 'none' }}
+                  style={{}}
                 >
                   {note}
                 </text>
@@ -264,7 +276,7 @@ export function RootWheel() {
                     alignmentBaseline="middle"
                     opacity={isBassActive ? 1 : 0.4}
                     className="pointer-events-none"
-                    style={{ textShadow: isBassActive ? '0 0 5px white' : 'none' }}
+                    style={{}}
                   >
                     {note}
                   </text>
