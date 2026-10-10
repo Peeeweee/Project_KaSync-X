@@ -1,17 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import * as Tone from 'tone';
 import { useLooperStore } from '../store/looperState';
 import type { InstrumentType } from '../store/musicState';
 import { exportMIDI } from '../looper/midiExport';
 import { exportAudioWav } from '../looper/audioExport';
 import { WakandanSelect } from './WakandanSelect';
 import { useMidiStore } from '../midi/midiManager';
+import { useArrangementStore } from '../store/arrangementState';
 
 const INSTRUMENTS: InstrumentType[] = ['Subtractive', 'FM', 'Electric Piano', 'Pad'];
 
 export function MixerPanel() {
-  const { tracks, setTrackProperty, armTrack, isGlobalRecording, bpm } = useLooperStore();
+  const { tracks, setTrackProperty, armTrack, clearTrackEvents, isGlobalRecording, bpm, loopBars, beatsPerBar, masterVolume, setMasterVolume } = useLooperStore();
   const [isExportingWav, setIsExportingWav] = useState(false);
   const { isPanelOpen, togglePanel } = useMidiStore();
+  const toggleArrangement = useArrangementStore(state => state.toggle);
+
+  useEffect(() => {
+    if (masterVolume === 0) {
+      Tone.Destination.mute = true;
+    } else {
+      Tone.Destination.mute = false;
+      // Exponential curve for volume mapping
+      const db = 20 * Math.log10(masterVolume);
+      Tone.Destination.volume.rampTo(db, 0.1);
+    }
+  }, [masterVolume]);
 
   const handleExportMidi = () => {
     exportMIDI(tracks, bpm);
@@ -21,32 +35,41 @@ export function MixerPanel() {
     setIsExportingWav(true);
     // Allow React state to update UI before heavy audio rendering starts
     setTimeout(async () => {
-      await exportAudioWav(tracks, bpm);
+      await exportAudioWav(tracks, bpm, loopBars, beatsPerBar);
       setIsExportingWav(false);
     }, 50);
   };
 
   return (
-    <div className="absolute top-[110px] left-8 z-40 flex flex-col gap-2 pointer-events-none w-56">
+    <aside className="kasync-mixer absolute top-[110px] left-8 z-40 flex flex-col gap-2 pointer-events-none w-48" aria-label="Looper mixer">
       
       {/* Sleek Export Header */}
-      <div className="pointer-events-auto flex items-center justify-between bg-black/80 backdrop-blur-3xl border-b-2 border-t border-l border-r border-t-transparent border-l-transparent border-r-transparent border-b-[var(--color-primary-glow)] px-3 py-1.5 shadow-[0_5px_15px_rgba(157,78,221,0.15)] rounded-t-lg">
-        <span className="text-[9px] text-[var(--color-metal-light)] font-bold uppercase tracking-widest">Master <span className="text-[var(--color-primary-glow)]">Out</span></span>
-        <div className="flex gap-1.5">
+      <div className="pointer-events-auto flex flex-col gap-1 bg-black/80 backdrop-blur-3xl border-l-2 border-t border-r border-b border-t-[var(--color-metal-dark)] border-r-[var(--color-metal-dark)] border-b-[var(--color-primary-glow)] border-l-[var(--color-metal-light)] px-2 py-1 shadow-[0_5px_15px_rgba(157,78,221,0.15)] rounded-t-md">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-[var(--color-metal-light)] font-display font-bold uppercase tracking-widest whitespace-nowrap" style={{ fontSize: '10px' }}>Master <span className="text-[var(--color-primary-glow)]">Out</span></span>
+          <div className="flex gap-[3px]">
+          <button
+            onClick={toggleArrangement}
+            title="Open Arrangement Studio"
+            className="px-1.5 py-0.5 text-[8px] font-display font-bold leading-none uppercase tracking-widest rounded-sm bg-[#00f0ff]/10 text-[#00f0ff] hover:bg-[#00f0ff]/20 transition-colors border border-transparent hover:border-[#00f0ff]/40" style={{ fontSize: '8px' }}
+          >
+            Edit
+          </button>
           <button
             onClick={handleExportMidi}
-            className="px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest rounded bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white transition-colors"
+            className="px-1.5 py-0.5 text-[8px] font-display font-bold leading-none uppercase tracking-widest rounded-sm bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white transition-colors border border-transparent hover:border-white/20" style={{ fontSize: '8px' }}
           >
             MIDI
           </button>
           <button
             onClick={handleExportWav}
             disabled={isExportingWav}
-            className={`px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest rounded transition-colors flex items-center justify-center min-w-[36px] ${
+            className={`px-1.5 py-0.5 text-[8px] font-display font-bold leading-none uppercase tracking-widest rounded-sm transition-all flex items-center justify-center min-w-[28px] border border-transparent ${
               isExportingWav 
                 ? 'bg-[var(--color-highlight)] text-black cursor-wait' 
-                : 'bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-glow)]'
+                : 'bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-glow)] hover:border-[var(--color-primary-glow)]'
             }`}
+            style={{ fontSize: '8px' }}
           >
             {isExportingWav ? (
               <div className="w-2 h-2 border border-black border-t-transparent rounded-full animate-spin"></div>
@@ -58,22 +81,38 @@ export function MixerPanel() {
           <button
             onClick={togglePanel}
             title="MIDI I/O Settings"
-            className={`w-[26px] h-[18px] text-[9px] flex items-center justify-center rounded transition-all ${
+            className={`w-[16px] h-[12px] text-[6px] flex items-center justify-center rounded-sm transition-all border ${
               isPanelOpen
-                ? 'bg-[#00f0ff]/15 text-[#00f0ff] border border-[#00f0ff]/40 shadow-[0_0_8px_rgba(0,240,255,0.3)]'
-                : 'bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white'
+                ? 'bg-[#00f0ff]/15 text-[#00f0ff] border-[#00f0ff]/40 shadow-[0_0_8px_rgba(0,240,255,0.3)]'
+                : 'bg-[var(--color-metal)] text-[var(--color-highlight)] border-transparent hover:border-[var(--color-highlight)]/40 hover:text-[var(--color-highlight)]'
             }`}
           >
             ⚡
           </button>
         </div>
+        </div>
+        
+        {/* Master Volume Slider */}
+        <div className="flex items-center gap-2 px-1 pb-1">
+          <span className="text-[8px] text-[var(--color-metal-light)] font-display uppercase tracking-widest">VOL</span>
+          <input 
+            aria-label="Master Volume"
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01" 
+            value={masterVolume}
+            onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+            className="flex-1 h-1 bg-[var(--color-metal-dark)] rounded-full appearance-none outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:bg-[var(--color-primary-glow)] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-[0_0_5px_var(--color-primary-glow)] hover:[&::-webkit-slider-thumb]:w-3 hover:[&::-webkit-slider-thumb]:h-3 transition-all"
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[calc(100vh-280px)] pr-1 custom-scrollbar">
+      <div className="kasync-mixer-tracks flex flex-col gap-1.5 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-280px)] custom-scrollbar">
         {tracks.map((track) => (
           <div 
             key={track.id} 
-            className={`pointer-events-auto flex items-center gap-2 bg-black/60 backdrop-blur-xl border-l-2 border-t border-r border-b border-t-[var(--color-metal-dark)] border-r-[var(--color-metal-dark)] border-b-[var(--color-metal-dark)] rounded-r-md px-2 py-1 shadow-lg transition-all hover:bg-black/80 group ${track.isArmed ? 'border-l-[var(--color-primary-glow)] bg-black/80' : 'border-l-[var(--color-metal-light)]'}`}
+            className={`kasync-mixer-track pointer-events-auto flex w-full min-w-0 items-center gap-2 overflow-hidden bg-black/60 backdrop-blur-xl border-l-2 border-t border-r border-b border-t-[var(--color-metal-dark)] border-r-[var(--color-metal-dark)] border-b-[var(--color-metal-dark)] rounded-r-md px-2 py-1 shadow-lg transition-all hover:bg-black/80 group ${track.isArmed ? 'border-l-[var(--color-primary-glow)] bg-black/80' : 'border-l-[var(--color-metal-light)]'}`}
           >
           {/* Track Number & Arm */}
           <button
@@ -96,8 +135,9 @@ export function MixerPanel() {
             aria-label={`Select Instrument for Track ${track.id + 1}`}
             value={track.instrument}
             onChange={(e) => setTrackProperty(track.id, 'instrument', e.target.value as InstrumentType)}
-            className="w-16 flex-1 text-[11px] font-bold"
+            className="w-16 min-w-0 flex-1 text-[10px]"
             color="var(--color-primary-glow)"
+            style={{ fontSize: '10px' }}
           >
             {INSTRUMENTS.map(i => <option key={i} value={i} className="bg-[var(--color-bg)] tracking-normal">{i}</option>)}
           </WakandanSelect>
@@ -135,9 +175,18 @@ export function MixerPanel() {
             onChange={(e) => setTrackProperty(track.id, 'volume', parseFloat(e.target.value))}
             className="w-12 h-1 shrink-0 accent-[var(--color-primary-glow)] bg-[var(--color-metal)] rounded-full appearance-none outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:bg-[var(--color-primary-glow)] [&::-webkit-slider-thumb]:rounded-full"
           />
+          <button
+            aria-label={`Clear Track ${track.id + 1}`}
+            disabled={track.events.length === 0 || isGlobalRecording}
+            onClick={() => clearTrackEvents(track.id)}
+            title={`${track.events.length} recorded event${track.events.length === 1 ? '' : 's'} · Clear`}
+            className="w-4 text-[8px] text-[var(--color-metal-light)] hover:text-[var(--color-danger)] disabled:opacity-20"
+          >
+            ×
+          </button>
         </div>
       ))}
       </div>
-    </div>
+    </aside>
   );
 }
