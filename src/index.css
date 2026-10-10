@@ -10,6 +10,10 @@
   --color-metal: #2A2F3D;
   --color-metal-light: #6E7C9C;
   --color-danger: #ff4d4d;
+  
+  --font-display: 'Rajdhani', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  --font-ui: 'Outfit', sans-serif;
 }
 
 :root {
@@ -22,6 +26,9 @@
   --color-metal: #2A2F3D;
   --color-metal-light: #6E7C9C;
   --color-danger: #ff4d4d;
+  --font-display: 'Rajdhani', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  --font-ui: 'Outfit', sans-serif;
 }
 
 body {
@@ -29,12 +36,173 @@ body {
   color: var(--color-primary);
   margin: 0;
   min-height: 100vh;
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-ui);
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .kasync-logo {
+    top: 0.75rem !important;
+    left: 0.75rem !important;
+    transform: scale(0.78);
+    transform-origin: top left;
+  }
+
+  .kasync-session-trigger {
+    top: 0.75rem !important;
+    right: 0.75rem !important;
+  }
+
+  .kasync-mixer {
+    top: 4.5rem !important;
+    left: 0.5rem !important;
+    transform: scale(0.78);
+    transform-origin: top left;
+  }
+
+  .kasync-instruments {
+    top: 4.5rem !important;
+    right: 0.5rem !important;
+    transform: scale(0.78);
+    transform-origin: top right;
+  }
+
+  .kasync-midi-panel {
+    top: 4.5rem !important;
+    left: 11.5rem !important;
+  }
+
+  .kasync-transport {
+    bottom: 0.5rem !important;
+    width: calc(100% - 1rem) !important;
+  }
+
+  .kasync-transport-tools {
+    max-width: calc(100vw - 1rem);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .kasync-transport-tools::-webkit-scrollbar {
+    display: none;
+  }
+
+  .kasync-transport-main {
+    padding-inline: 0.5rem !important;
+  }
+
+  .kasync-wheel-svg {
+    width: min(43vw, 48vh) !important;
+    height: min(43vw, 48vh) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .kasync-logo {
+    transform: scale(0.62);
+  }
+
+  .kasync-mixer,
+  .kasync-instruments {
+    transform: scale(0.62);
+  }
+
+  .kasync-midi-panel {
+    left: 0.5rem !important;
+    width: min(268px, calc(100vw - 1rem)) !important;
+  }
+
+  .kasync-song-panel {
+    width: 100vw !important;
+  }
+
+  .kasync-session-panel {
+    top: 3.75rem !important;
+    right: 0.5rem !important;
+  }
+
+  .kasync-camera-controls {
+    right: 0.5rem !important;
+    bottom: 0.25rem !important;
+  }
+
+  .kasync-center-readout {
+    scale: 0.72;
+  }
+
+  .kasync-transport-main {
+    min-width: 700px;
+    overflow-x: auto;
+  }
+
+  .kasync-transport {
+    overflow-x: auto;
+    align-items: flex-start !important;
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .kasync-app::after {
+    content: 'Rotate to landscape for the full performance surface';
+    position: absolute;
+    top: 3.5rem;
+    left: 50%;
+    z-index: 90;
+    translate: -50% 0;
+    width: max-content;
+    max-width: calc(100vw - 2rem);
+    padding: 0.45rem 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--color-highlight) 45%, transparent);
+    border-radius: 999px;
+    background: rgba(3, 3, 5, 0.82);
+    color: var(--color-highlight);
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    text-align: center;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
 }
 
 @keyframes breathe {
   0%, 100% { opacity: 0.2; }
-  50% { opacity: 0.8; filter: drop-shadow(0 0 10px var(--color-primary)); }
+  50% { opacity: 0.8; }
 }
 
 @keyframes spin-slow {
@@ -105,6 +273,17 @@ body {
 
 .low-perf-mode .particle {
   display: none !important;
+}
+
+.low-perf-mode .animate-breathe,
+.low-perf-mode .animate-spin-slow,
+.low-perf-mode .animate-pulse-cyan,
+.low-perf-mode .waveform-saw,
+.low-perf-mode .waveform-fm,
+.low-perf-mode .waveform-ep,
+.low-perf-mode .waveform-pad {
+  animation: none !important;
+  will-change: auto !important;
 }
 
 /* ──────────────────────────────────────────────
@@ -244,4 +423,267 @@ body {
 }
 .midi-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(157, 78, 221, 0.6);
+}
+
+/* Responsive performance stage -------------------------------------------------
+   The side rails and gesture wheels share one geometry system. This keeps the
+   playable surfaces clear of panels instead of relying on viewport percentages. */
+.kasync-app {
+  --kasync-edge: clamp(0.75rem, 1.65vw, 2rem);
+  --kasync-panel-width: clamp(10rem, 13vw, 12.5rem);
+  --kasync-center-space: 8.5rem; /* Center circle is 8rem radius */
+  --kasync-available-space: calc(50vw - var(--kasync-center-space) - var(--kasync-edge) - var(--kasync-panel-width));
+  --kasync-wheel-size: min(48vh, 32vw, 30rem, calc(var(--kasync-available-space) - 1rem));
+  --kasync-stage-y: 50%;
+  --kasync-left-wheel-x: calc((var(--kasync-edge) + var(--kasync-panel-width) + 50vw - var(--kasync-center-space)) / 2);
+  --kasync-right-wheel-x: calc(100% - var(--kasync-left-wheel-x));
+  min-width: 0;
+  isolation: isolate;
+}
+
+.kasync-mixer,
+.kasync-instruments {
+  width: var(--kasync-panel-width) !important;
+  min-width: 0;
+  transform: none !important;
+}
+
+.kasync-mixer > *,
+.kasync-mixer-track {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.kasync-mixer {
+  left: var(--kasync-edge) !important;
+}
+
+.kasync-instruments {
+  right: var(--kasync-edge) !important;
+}
+
+.kasync-performance-wheel {
+  top: var(--kasync-stage-y);
+  width: var(--kasync-wheel-size);
+  height: var(--kasync-wheel-size);
+  contain: layout paint;
+}
+
+.kasync-performance-wheel--left {
+  left: var(--kasync-left-wheel-x);
+}
+
+.kasync-performance-wheel--right {
+  left: var(--kasync-right-wheel-x);
+}
+
+.kasync-performance-wheel--solo {
+  left: 50%;
+}
+
+.kasync-wheel-svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.kasync-song-hud {
+  top: clamp(5.25rem, 11vh, 7.5rem);
+  max-width: min(46rem, calc(100vw - 2rem));
+}
+
+.kasync-session-trigger {
+  right: calc(var(--kasync-edge) + 16.25rem) !important;
+}
+
+.kasync-camera-controls {
+  right: var(--kasync-edge) !important;
+  bottom: 8.5rem !important;
+  max-width: calc(100vw - 1rem);
+}
+
+.kasync-performance-warning {
+  top: 27rem;
+  right: var(--kasync-edge);
+  width: var(--kasync-panel-width);
+  box-sizing: border-box;
+  font-size: 0.6rem;
+  line-height: 1.35;
+}
+
+.kasync-center-readout {
+  transition: none !important;
+}
+
+@media (max-width: 1180px) {
+  .kasync-app {
+    --kasync-edge: 0.5rem;
+    --kasync-panel-width: clamp(9rem, 17vw, 11rem);
+    --kasync-center-space: 5.6rem;
+    --kasync-available-space: calc(50vw - var(--kasync-center-space) - var(--kasync-edge) - var(--kasync-panel-width));
+    --kasync-wheel-size: min(45vh, 32vw, 26rem, calc(var(--kasync-available-space) - 0.5rem));
+    --kasync-left-wheel-x: calc((var(--kasync-edge) + var(--kasync-panel-width) + 50vw - var(--kasync-center-space)) / 2);
+  }
+
+  .kasync-mixer,
+  .kasync-instruments {
+    top: 5rem !important;
+  }
+
+  .kasync-transport {
+    max-width: calc(100vw - 1rem) !important;
+  }
+
+  .kasync-center-readout {
+    scale: 0.68;
+  }
+}
+
+@media (max-width: 900px) {
+  .kasync-app {
+    --kasync-panel-width: calc(45vw - 0.75rem);
+    --kasync-center-space: 4.8rem;
+    --kasync-available-space: calc(50vw - var(--kasync-center-space) - 0.5rem);
+    --kasync-wheel-size: min(50vw, 36vh, 18rem, calc(var(--kasync-available-space) * 2 - 1rem));
+    --kasync-left-wheel-x: calc((0.5rem + 50vw - var(--kasync-center-space)) / 2);
+    --kasync-right-wheel-x: calc(100% - var(--kasync-left-wheel-x));
+    --kasync-stage-y: 58%;
+  }
+
+  .kasync-mixer,
+  .kasync-instruments {
+    top: 4rem !important;
+    max-height: min(28vh, 14rem);
+    overflow: hidden;
+  }
+
+  .kasync-mixer > :first-child {
+    gap: 0.25rem;
+    padding-inline: 0.35rem;
+  }
+
+  .kasync-mixer > :first-child > :first-child {
+    display: none;
+  }
+
+  .kasync-mixer > :last-child,
+  .kasync-instruments > :nth-child(2) {
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .kasync-song-hud {
+    top: calc(4rem + min(28vh, 14rem) + 0.5rem);
+    width: calc(100vw - 1rem);
+  }
+
+  .kasync-song-hud > :first-child {
+    display: none;
+  }
+
+  .kasync-song-hud > :nth-child(2) {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .kasync-center-readout {
+    scale: 0.58;
+  }
+
+  .kasync-visualizer {
+    display: none !important;
+  }
+
+  .kasync-session-trigger {
+    top: 0.75rem !important;
+    right: 0.5rem !important;
+  }
+
+  .kasync-transport {
+    bottom: 0.5rem !important;
+    width: calc(100vw - 1rem) !important;
+    overflow: visible !important;
+  }
+
+  .kasync-transport-main {
+    display: grid !important;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.35rem;
+    min-width: 0 !important;
+    overflow: visible !important;
+    border-radius: 1.25rem !important;
+    padding: 0.5rem !important;
+  }
+
+  .kasync-transport-main > :nth-child(2),
+  .kasync-transport-main > :nth-child(4) {
+    display: none;
+  }
+
+  .kasync-transport-main > :nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    gap: 1.25rem;
+    width: 100%;
+    padding: 0.35rem 0.5rem 0.15rem !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .kasync-transport-main > :nth-child(5) {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .kasync-transport-tools {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .kasync-camera-controls {
+    bottom: 13rem !important;
+  }
+
+  .kasync-performance-warning {
+    top: auto;
+    right: 0.5rem;
+    bottom: 15.5rem;
+    width: calc(100vw - 1rem);
+    padding-block: 0.35rem;
+    text-align: center;
+  }
+
+}
+
+@media (max-height: 650px) {
+  .kasync-app {
+    --kasync-stage-y: 55%;
+    --kasync-wheel-size: min(44vw, 38vh, 20rem);
+  }
+
+  .kasync-mixer,
+  .kasync-instruments {
+    top: 4rem !important;
+    max-height: calc(100vh - 11rem);
+    overflow: hidden;
+  }
+
+  .kasync-song-hud {
+    top: 3.5rem;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .kasync-mixer,
+  .kasync-instruments {
+    top: 5.75rem !important;
+  }
+
+  .kasync-song-hud {
+    top: calc(5.75rem + min(28vh, 14rem) + 0.5rem);
+  }
 }
