@@ -1,230 +1,439 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import type { Category, HandLandmarker, Landmark } from '@mediapipe/tasks-vision';
 import { useHandStore } from '../store/handState';
+import type { HandData } from '../store/handState';
+import { useTrackingSettingsStore, getTargetInferenceFps } from '../store/trackingSettings';
 import { HandEmaFilter } from '../tracking/emaFilter';
 import { computeGestures } from '../tracking/gestureRecognizer';
-import type { HandData } from '../store/handState';
+import { HandRoleTracker } from '../tracking/handRoleTracker';
+import type {
+  HandTrackingWorkerRequest,
+  HandTrackingWorkerResponse,
+  TrackingBackend,
+} from '../tracking/workerProtocol';
 
-// Target inference FPS — higher = more responsive, but more CPU/GPU load
-const TARGET_INFERENCE_FPS = 20;
-const INFERENCE_INTERVAL_MS = 1000 / TARGET_INFERENCE_FPS;
+type InferenceBackend = 'worker' | 'main' | null;
+
+interface VideoFrameMetadataLike {
+  mediaTime: number;
+}
+
+type VideoWithFrameCallback = HTMLVideoElement & {
+  requestVideoFrameCallback?: (
+    callback: (now: number, metadata: VideoFrameMetadataLike) => void,
+  ) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
+};
+
+function sortDetections(landmarks: Landmark[][], handednesses: Category[][]) {
+  return landmarks
+    .map((handLandmarks, index) => ({
+      landmarks: handLandmarks,
+      categories: handednesses[index] ?? [],
+      handedness: handednesses[index]?.[0]?.categoryName ?? 'Unknown',
+    }))
+    .sort((a, b) => {
+      if (a.handedness !== 'Unknown' && b.handedness !== 'Unknown' && a.handedness !== b.handedness) {
+        return a.handedness.localeCompare(b.handedness);
+      }
+      return a.landmarks[8].x - b.landmarks[8].x;
+    });
+}
 
 export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, deviceId?: string) {
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
 
+  const workerRef = useRef<Worker | null>(null);
   const landmarkerRef = useRef<HandLandmarker | null>(null);
-  const emaFilterRef = useRef(new HandEmaFilter(0.5));
-  const requestRef = useRef<number>(0);
+  const backendRef = useRef<InferenceBackend>(null);
+  const emaFilterRef = useRef(new HandEmaFilter(useTrackingSettingsStore.getState().smoothingAlpha));
+  const roleTrackerRef = useRef(new HandRoleTracker());
+  const previousPinchesRef = useRef(new Map<string, boolean>());
+  const inFlightRequestRef = useRef<number | null>(null);
+  const requestSequenceRef = useRef(0);
   const lastInferenceTimeRef = useRef(0);
-  const inferenceScheduledRef = useRef(false); // prevents queuing multiple inferences
+  const frameTransferFailuresRef = useRef(0);
+  const activateMainFallbackRef = useRef<(() => void) | null>(null);
+  const settingsRef = useRef(useTrackingSettingsStore.getState());
 
-  // ── Init MediaPipe on the main thread ──────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-
-    async function init() {
-      try {
-        const vision = await FilesetResolver.forVisionTasks(
-          self.location.origin + '/wasm'
-        );
-
-        // Try GPU first — cuts inference from ~80 ms → ~15 ms on supported hardware.
-        // Fall back to CPU automatically if GPU delegate init throws.
-        let landmarker: HandLandmarker | null = null;
-        try {
-          landmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: '/hand_landmarker.task',
-              delegate: 'GPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
-            minHandDetectionConfidence: 0.6,
-            minHandPresenceConfidence: 0.6,
-            minTrackingConfidence: 0.5,
-          });
-        } catch {
-          console.warn('GPU delegate unavailable, falling back to CPU.');
-          landmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: '/hand_landmarker.task',
-              delegate: 'CPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
-            minHandDetectionConfidence: 0.6,
-            minHandPresenceConfidence: 0.6,
-            minTrackingConfidence: 0.5,
-          });
-        }
-
-        if (!cancelled) {
-          landmarkerRef.current = landmarker;
-          setIsReady(true);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error('Failed to initialize HandLandmarker:', err);
-          setError('Tracking init failed. Try refreshing.');
-        }
-      }
-    }
-
-    init();
-
-    return () => {
-      cancelled = true;
-      landmarkerRef.current?.close();
-      landmarkerRef.current = null;
-    };
-  }, []); // Runs only once — no reactive deps
-
-  // ── Camera stream + throttled inference loop ───────────────────────────────
-  useEffect(() => {
-    if (!isReady || !videoRef.current) return;
-
+  const processResults = (
+    landmarks: Landmark[][],
+    handednesses: Category[][],
+    inferenceMs: number,
+  ) => {
     const video = videoRef.current;
-    let active = true;
-    let stream: MediaStream | null = null;
-    // Cache video element reference — avoids document.querySelector('video') on every inference
-    const cachedVideo = video;
+    if (!video) return;
 
-    // External cameras (BT/DJI/wireless) get lower resolution to cut decode latency
-    const videoConstraints = deviceId
-      ? {
-          deviceId: { exact: deviceId },
-          width:     { ideal: 640 },
-          height:    { ideal: 480 },
-          frameRate: { ideal: 24  },
-        }
-      : { width: 1280, height: 720, frameRate: { ideal: 30 } };
+    const detections = sortDetections(landmarks, handednesses);
+    const rawLandmarks = detections.map(detection => detection.landmarks);
+    const smoothedLandmarks = emaFilterRef.current.filter(rawLandmarks);
+    const currentKeys = new Set<string>();
+    const settings = settingsRef.current;
 
-    async function startCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
-        if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
-        video.srcObject = stream;
-        await video.play();
-        if (active) {
-          cancelAnimationFrame(requestRef.current);
-          requestRef.current = requestAnimationFrame(rafLoop);
-        }
-      } catch (err: any) {
-        if (!active) return;
-        // Retry with safe fallback constraints
-        if (err.name === 'NotReadableError' || err.name === 'AbortError' || err.name === 'OverconstrainedError') {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-            if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
-            video.srcObject = stream;
-            await video.play();
-            if (active) requestRef.current = requestAnimationFrame(rafLoop);
-          } catch {
-            setError('Camera unavailable.');
-          }
-        } else if (err.name === 'NotAllowedError') {
-          setError('Camera permission denied.');
-        } else {
-          setError('Camera unavailable.');
-        }
-      }
-    }
-
-    // Inference is deferred via setTimeout so it runs OUTSIDE of the rAF callback.
-    // This prevents the rAF handler from being measured as "long" by the browser —
-    // the heavy MediaPipe work shows up on the setTimeout task instead.
-    function scheduleInference(timestamp: number) {
-      if (inferenceScheduledRef.current) return;
-      inferenceScheduledRef.current = true;
-
-      setTimeout(() => {
-        if (!active || !landmarkerRef.current) {
-          inferenceScheduledRef.current = false;
-          return;
-        }
-
-        try {
-          if (
-            cachedVideo.readyState >= 2 &&
-            cachedVideo.videoWidth > 0 &&
-            !cachedVideo.paused
-          ) {
-            const results = landmarkerRef.current.detectForVideo(cachedVideo, timestamp);
-
-            let sortedRawLandmarks = results.landmarks;
-            let sortedHandsCategories = results.handednesses;
-
-            if (sortedRawLandmarks.length >= 2) {
-              const paired = sortedRawLandmarks.map((landmarks, i) => ({
-                landmarks,
-                category: sortedHandsCategories[i] ?? [],
-              }));
-              // Screen X is (1 - landmark.x) due to horizontal mirror flip
-              paired.sort((a, b) => (1 - a.landmarks[0].x) - (1 - b.landmarks[0].x));
-              sortedRawLandmarks = paired.map(p => p.landmarks);
-              sortedHandsCategories = paired.map(p => p.category);
-            }
-
-            const smoothedLandmarks = emaFilterRef.current.filter(sortedRawLandmarks);
-
-            const rawHands: HandData[] = sortedRawLandmarks.map((l, i) => ({
-              landmarks: l,
-              handedness: sortedHandsCategories[i]?.[0]?.categoryName ?? 'Unknown',
-              ...computeGestures(l, cachedVideo),
-            }));
-
-            const smoothedHands: HandData[] = smoothedLandmarks.map((l, i) => ({
-              landmarks: l,
-              handedness: sortedHandsCategories[i]?.[0]?.categoryName ?? 'Unknown',
-              ...computeGestures(l, cachedVideo),
-            }));
-
-            // Use getState() to avoid React hook dependency loop
-            const store = useHandStore.getState();
-            store.setHands(rawHands, smoothedHands);
-            store.setIsTracking(rawHands.length > 0);
-          }
-        } catch (err) {
-          console.error('Hand tracking inference error:', err);
-        }
-
-        inferenceScheduledRef.current = false;
-      }, 0); // defer to next macrotask — keeps rAF fast
-    }
-
-    function rafLoop(timestamp: number) {
-      if (!active) return;
-
-      // Throttle: only kick off inference at our target rate
-      if (timestamp - lastInferenceTimeRef.current >= INFERENCE_INTERVAL_MS) {
-        scheduleInference(timestamp);
-      }
-
-      requestRef.current = requestAnimationFrame(rafLoop);
-    }
-
-    video.addEventListener('loadeddata', () => {
-      if (active) {
-        cancelAnimationFrame(requestRef.current);
-        requestRef.current = requestAnimationFrame(rafLoop);
-      }
+    const smoothedHands: HandData[] = smoothedLandmarks.map((handLandmarks, index) => {
+      const handedness = detections[index]?.handedness ?? 'Unknown';
+      const identityKey = handedness === 'Unknown' ? `hand-${index}` : handedness;
+      currentKeys.add(identityKey);
+      const gestures = computeGestures(handLandmarks, video, {
+        previousPinching: previousPinchesRef.current.get(identityKey) ?? false,
+        pinchThreshold: settings.pinchThreshold,
+        pinchReleaseThreshold: settings.pinchReleaseThreshold,
+        mirrored: settings.mirrorCamera,
+      });
+      previousPinchesRef.current.set(identityKey, gestures.isPinching);
+      return { landmarks: handLandmarks, handedness, ...gestures };
     });
 
-    startCamera();
+    for (const key of previousPinchesRef.current.keys()) {
+      if (!currentKeys.has(key)) previousPinchesRef.current.delete(key);
+    }
+
+    const roleAssignedHands = roleTrackerRef.current.assign(smoothedHands);
+    const rawHands: HandData[] = rawLandmarks.map((handLandmarks, index) => {
+      const handedness = detections[index]?.handedness ?? 'Unknown';
+      const gestures = computeGestures(handLandmarks, video, {
+        previousPinching: roleAssignedHands[index]?.isPinching ?? false,
+        pinchThreshold: settings.pinchThreshold,
+        pinchReleaseThreshold: settings.pinchReleaseThreshold,
+        mirrored: settings.mirrorCamera,
+      });
+      return {
+        landmarks: handLandmarks,
+        handedness,
+        ...gestures,
+        isPinching: roleAssignedHands[index]?.isPinching ?? gestures.isPinching,
+        screenRole: roleAssignedHands[index]?.screenRole,
+      };
+    });
+
+    const handStore = useHandStore.getState();
+    handStore.setHands(rawHands, roleAssignedHands);
+    handStore.setIsTracking(roleAssignedHands.length > 0);
+    useTrackingSettingsStore.getState().setRuntime({ inferenceLatencyMs: inferenceMs });
+  };
+
+  useEffect(() => {
+    return useTrackingSettingsStore.subscribe(state => {
+      settingsRef.current = state;
+      emaFilterRef.current.setAlpha(state.smoothingAlpha);
+    });
+  }, []);
+
+  // Camera permission is requested before MediaPipe is loaded, keeping the heavy
+  // model and WASM out of the startup path when permission is denied.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    let active = true;
+    let stream: MediaStream | null = null;
+    setCameraReady(false);
+    setError(null);
+
+    const preferredConstraints: MediaTrackConstraints = deviceId
+      ? {
+          deviceId: { exact: deviceId },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 24 },
+        }
+      : { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+
+    const attachStream = async (nextStream: MediaStream) => {
+      if (!active) {
+        nextStream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      stream = nextStream;
+      video.srcObject = nextStream;
+      await video.play();
+      if (!active) return;
+      setHasCameraPermission(true);
+      setCameraReady(true);
+    };
+
+    const startCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError('Camera API unavailable. Use a secure HTTPS connection.');
+        return;
+      }
+      try {
+        await attachStream(await navigator.mediaDevices.getUserMedia({ video: preferredConstraints }));
+      } catch (cause) {
+        if (!active) return;
+        const errorName = cause instanceof Error ? cause.name : '';
+        if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
+          setError('Camera permission denied. Allow camera access, then reload.');
+          return;
+        }
+        try {
+          await attachStream(await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 } },
+          }));
+        } catch {
+          if (active) setError('Camera unavailable or already in use.');
+        }
+      }
+    };
+
+    void startCamera();
 
     return () => {
       active = false;
-      cancelAnimationFrame(requestRef.current);
-      inferenceScheduledRef.current = false;
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      if (video.srcObject) {
-        (video.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-        video.srcObject = null;
+      setCameraReady(false);
+      stream?.getTracks().forEach(track => track.stop());
+      if (video.srcObject === stream) video.srcObject = null;
+      emaFilterRef.current.reset();
+      roleTrackerRef.current.reset();
+      previousPinchesRef.current.clear();
+      inFlightRequestRef.current = null;
+      lastInferenceTimeRef.current = 0;
+      const handStore = useHandStore.getState();
+      handStore.setHands([], []);
+      handStore.setIsTracking(false);
+    };
+  }, [deviceId, videoRef]);
+
+  // Initialize the worker after camera permission. If module workers are blocked,
+  // dynamically import MediaPipe and retain a lower-performance main-thread fallback.
+  useEffect(() => {
+    if (!hasCameraPermission) return;
+    let active = true;
+    let fallbackStarting = false;
+    let initializationTimer: ReturnType<typeof setTimeout> | null = null;
+    let consecutiveProcessFailures = 0;
+
+    const initializeMainThreadFallback = async () => {
+      if (fallbackStarting || !active) return;
+      fallbackStarting = true;
+      try {
+        const { FilesetResolver, HandLandmarker: HandLandmarkerClass } = await import('@mediapipe/tasks-vision');
+        const vision = await FilesetResolver.forVisionTasks(`${window.location.origin}/wasm`);
+        let landmarker: HandLandmarker;
+        let backend: TrackingBackend;
+        try {
+          landmarker = await HandLandmarkerClass.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: '/hand_landmarker.task', delegate: 'GPU' },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.6,
+            minHandPresenceConfidence: 0.6,
+            minTrackingConfidence: 0.5,
+          });
+          backend = 'main-gpu';
+        } catch {
+          landmarker = await HandLandmarkerClass.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: '/hand_landmarker.task', delegate: 'CPU' },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.6,
+            minHandPresenceConfidence: 0.6,
+            minTrackingConfidence: 0.5,
+          });
+          backend = 'main-cpu';
+        }
+        if (!active) {
+          landmarker.close();
+          return;
+        }
+        landmarkerRef.current = landmarker;
+        backendRef.current = 'main';
+        useTrackingSettingsStore.getState().setRuntime({ backend });
+        setIsReady(true);
+      } catch (cause) {
+        if (active) {
+          console.error('Failed to initialize hand tracking:', cause);
+          setError('Tracking initialization failed. Reload to try again.');
+        }
       }
     };
-  }, [isReady, deviceId]); // Only re-run if ready state or device changes
+
+    const switchToMainThreadFallback = () => {
+      if (!active || fallbackStarting) return;
+      if (initializationTimer !== null) {
+        clearTimeout(initializationTimer);
+        initializationTimer = null;
+      }
+      workerRef.current?.terminate();
+      workerRef.current = null;
+      backendRef.current = null;
+      inFlightRequestRef.current = null;
+      setIsReady(false);
+      void initializeMainThreadFallback();
+    };
+    activateMainFallbackRef.current = switchToMainThreadFallback;
+
+    try {
+      if (typeof createImageBitmap !== 'function') {
+        console.warn('ImageBitmap transfer unavailable; using main-thread tracking.');
+        switchToMainThreadFallback();
+        return () => {
+          active = false;
+          setIsReady(false);
+          activateMainFallbackRef.current = null;
+          landmarkerRef.current?.close();
+          landmarkerRef.current = null;
+          backendRef.current = null;
+          useTrackingSettingsStore.getState().setRuntime({ backend: null, inferenceLatencyMs: null });
+        };
+      }
+      const worker = new Worker(
+        new URL('../tracking/handTracking.worker.ts', import.meta.url),
+        { type: 'module', name: 'kasync-hand-tracking' },
+      );
+      workerRef.current = worker;
+      worker.onmessage = (event: MessageEvent<HandTrackingWorkerResponse>) => {
+        if (!active) return;
+        const message = event.data;
+        if (message.type === 'INIT_DONE') {
+          if (initializationTimer !== null) {
+            clearTimeout(initializationTimer);
+            initializationTimer = null;
+          }
+          backendRef.current = 'worker';
+          useTrackingSettingsStore.getState().setRuntime({ backend: message.backend });
+          setIsReady(true);
+        } else if (message.type === 'INIT_ERROR') {
+          console.warn('Worker tracking unavailable; using main-thread fallback.', message.error);
+          switchToMainThreadFallback();
+        } else if (message.type === 'RESULTS') {
+          if (message.requestId !== inFlightRequestRef.current) return;
+          consecutiveProcessFailures = 0;
+          frameTransferFailuresRef.current = 0;
+          inFlightRequestRef.current = null;
+          processResults(message.landmarks, message.handednesses, message.inferenceMs);
+        } else if (message.type === 'PROCESS_ERROR') {
+          if (message.requestId === inFlightRequestRef.current) {
+            inFlightRequestRef.current = null;
+          }
+          console.warn('Worker hand inference failed:', message.error);
+          consecutiveProcessFailures++;
+          if (consecutiveProcessFailures >= 3) switchToMainThreadFallback();
+        }
+      };
+      worker.onerror = event => {
+        if (!active || backendRef.current === 'main') return;
+        console.warn('Hand-tracking worker crashed; using main-thread fallback.', event.message);
+        switchToMainThreadFallback();
+      };
+      const initMessage: HandTrackingWorkerRequest = {
+        type: 'INIT',
+        wasmRoot: `${window.location.origin}/wasm`,
+        modelAssetPath: '/hand_landmarker.task',
+      };
+      worker.postMessage(initMessage);
+      initializationTimer = setTimeout(() => {
+        console.warn('Hand-tracking worker timed out; using main-thread fallback.');
+        switchToMainThreadFallback();
+      }, 12_000);
+    } catch (cause) {
+      console.warn('Module workers unavailable; using main-thread tracking.', cause);
+      switchToMainThreadFallback();
+    }
+
+    return () => {
+      active = false;
+      if (initializationTimer !== null) clearTimeout(initializationTimer);
+      activateMainFallbackRef.current = null;
+      setIsReady(false);
+      if (workerRef.current) {
+        const disposeMessage: HandTrackingWorkerRequest = { type: 'DISPOSE' };
+        workerRef.current.postMessage(disposeMessage);
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+      landmarkerRef.current?.close();
+      landmarkerRef.current = null;
+      backendRef.current = null;
+      useTrackingSettingsStore.getState().setRuntime({ backend: null, inferenceLatencyMs: null });
+    };
+  }, [hasCameraPermission, videoRef]);
+
+  // Schedule inference from decoded video frames. Exactly one request can be in flight.
+  useEffect(() => {
+    if (!cameraReady || !isReady || !videoRef.current) return;
+    const video = videoRef.current as VideoWithFrameCallback;
+    let active = true;
+    let frameHandle = 0;
+    let usesVideoFrames = false;
+
+    const runInference = (timestamp: number) => {
+      if (!active || inFlightRequestRef.current !== null) return;
+      const settings = settingsRef.current;
+      const targetFps = getTargetInferenceFps(settings.quality, settings.isLowPerformance);
+      const intervalMs = 1000 / targetFps;
+      if (timestamp - lastInferenceTimeRef.current < intervalMs) return;
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0 || video.paused) return;
+
+      lastInferenceTimeRef.current = timestamp;
+      const requestId = ++requestSequenceRef.current;
+      inFlightRequestRef.current = requestId;
+      if (useTrackingSettingsStore.getState().targetFps !== targetFps) {
+        useTrackingSettingsStore.getState().setRuntime({ targetFps });
+      }
+
+      if (backendRef.current === 'worker' && workerRef.current) {
+        void createImageBitmap(video)
+          .then(image => {
+            if (!active || !workerRef.current || inFlightRequestRef.current !== requestId) {
+              image.close();
+              return;
+            }
+            const message: HandTrackingWorkerRequest = { type: 'PROCESS', image, timestamp, requestId };
+            workerRef.current.postMessage(message, [image]);
+          })
+          .catch(cause => {
+            if (inFlightRequestRef.current === requestId) inFlightRequestRef.current = null;
+            console.warn('Unable to transfer camera frame to tracking worker:', cause);
+            frameTransferFailuresRef.current++;
+            if (frameTransferFailuresRef.current >= 3) activateMainFallbackRef.current?.();
+          });
+        return;
+      }
+
+      setTimeout(() => {
+        if (!active || inFlightRequestRef.current !== requestId || !landmarkerRef.current) return;
+        const startedAt = performance.now();
+        try {
+          const results = landmarkerRef.current.detectForVideo(video, timestamp);
+          processResults(results.landmarks, results.handednesses, performance.now() - startedAt);
+        } catch (cause) {
+          console.warn('Main-thread hand inference failed:', cause);
+        } finally {
+          if (inFlightRequestRef.current === requestId) inFlightRequestRef.current = null;
+        }
+      }, 0);
+    };
+
+    const scheduleNext = () => {
+      if (!active) return;
+      if (video.requestVideoFrameCallback) {
+        usesVideoFrames = true;
+        frameHandle = video.requestVideoFrameCallback((now) => {
+          runInference(now);
+          scheduleNext();
+        });
+      } else {
+        frameHandle = requestAnimationFrame(now => {
+          runInference(now);
+          scheduleNext();
+        });
+      }
+    };
+
+    scheduleNext();
+    return () => {
+      active = false;
+      if (usesVideoFrames) video.cancelVideoFrameCallback?.(frameHandle);
+      else cancelAnimationFrame(frameHandle);
+      inFlightRequestRef.current = null;
+      lastInferenceTimeRef.current = 0;
+    };
+  }, [cameraReady, isReady, videoRef]);
 
   return { isReady, error };
 }
