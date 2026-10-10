@@ -12,16 +12,25 @@ import { InstrumentPanel } from './components/InstrumentPanel';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { MidiPanel } from './components/MidiPanel';
 import { ToastContainer } from './components/ToastContainer';
+import { SessionPanel } from './components/SessionPanel';
+import { ArrangementPanel } from './components/ArrangementPanel';
 import { looperService } from './looper/recorder';
 import { useHandStore } from './store/handState';
 import { useMusicStore, INSTRUMENT_ORDER } from './store/musicState';
 import { useSongStore } from './store/songStore';
+import { useLooperStore } from './store/looperState';
 import { formatChordName } from './music/enharmonics';
 import { usePerformanceMonitor } from './hooks/usePerformanceMonitor';
 import { useInstrumentGesture } from './hooks/useInstrumentGesture';
 import { useAudioTrigger } from './hooks/useAudioTrigger';
 import { useMidi } from './hooks/useMidi';
+import { useSongTransport } from './hooks/useSongTransport';
 import { getScreenHands } from './tracking/handUtils';
+import { useSessionStore } from './store/sessionState';
+import { useTrackingSettingsStore } from './store/trackingSettings';
+import { saveAutosave } from './session/sessionManager';
+import { toast } from './store/toastStore';
+import { useArrangementStore } from './store/arrangementState';
 import './index.css';
 
 function App() {
@@ -33,11 +42,9 @@ function App() {
   const hoveredQuality = useMusicStore(state => state.hoveredQuality);
   const hoveredBass = useMusicStore(state => state.hoveredBass);
   const currentKey = useMusicStore(state => state.currentKey);
-  const hoveredEffect = useMusicStore(state => state.hoveredEffect);
   const hands = useHandStore(state => state.smoothedHands);
 
   // Song Mode reactive state (needed for HUD display key resolution)
-  const activeSongId = useSongStore(state => state.activeSongId);
   const activeSectionIndex = useSongStore(state => state.activeSectionIndex);
   const songSections = useSongStore(state => state.songs.find(s => s.id === state.activeSongId)?.sections);
   const songDefaultKey = useSongStore(state => state.songs.find(s => s.id === state.activeSongId)?.defaultKey);
@@ -47,6 +54,7 @@ function App() {
 
   // ── MIDI (input, output, clock, learn) ──
   useMidi();
+  useSongTransport();
 
   // ── Keyboard instrument switching ──
   useEffect(() => {
@@ -57,6 +65,66 @@ function App() {
 
       const store = useMusicStore.getState();
       const songStore = useSongStore.getState();
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (saveAutosave()) toast.success('Project saved locally.');
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        const looper = useLooperStore.getState();
+        const armedId = looper.tracks.find(track => track.isArmed)?.id;
+        if (armedId !== undefined) {
+          if (e.shiftKey) looper.redoTrack(armedId);
+          else looper.undoTrack(armedId);
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        const looper = useLooperStore.getState();
+        const armedId = looper.tracks.find(track => track.isArmed)?.id;
+        if (armedId !== undefined) looper.redoTrack(armedId);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        useArrangementStore.getState().setOpen(false);
+        useSessionStore.getState().setPanelOpen(false);
+        useTrackingSettingsStore.getState().setPanelOpen(false);
+        if (songStore.isSongPanelOpen) songStore.toggleSongPanel();
+        return;
+      }
+
+      if (e.key === '?') {
+        e.preventDefault();
+        const session = useSessionStore.getState();
+        session.setPanelOpen(!session.isPanelOpen);
+        return;
+      }
+
+      if (!e.repeat && e.code === 'Space') {
+        e.preventDefault();
+        const looper = useLooperStore.getState();
+        looper.setTransportState({ isPlaying: !looper.isPlaying });
+        return;
+      }
+
+      if (!e.repeat && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        looperService.toggleRecording();
+        return;
+      }
+
+      if (!e.repeat && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        const looper = useLooperStore.getState();
+        looper.setTransportState({ metronomeEnabled: !looper.metronomeEnabled });
+        return;
+      }
 
       // Song Mode section navigation
       if (store.mode === 'Song') {
@@ -101,6 +169,8 @@ function App() {
 
   // Ensure AudioContext is unlocked on ANY user interaction (click, tap, keypress)
   useEffect(() => {
+    if (audioStarted) return;
+
     const unlockAudio = async () => {
       try {
         await looperService.startAudioContext();
@@ -115,7 +185,7 @@ function App() {
       window.removeEventListener('pointerdown', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
     };
-  }, []);
+  }, [audioStarted]);
 
   const { displayText, isPlaying } = useMemo(() => {
     let text = 'OFF';
@@ -149,7 +219,7 @@ function App() {
   }, [mode, hands, hoveredRoot, hoveredQuality, hoveredBass, currentKey, activeSectionIndex, songSections, songDefaultKey]);
 
   return (
-    <div className="relative flex h-screen w-full items-center justify-center bg-[var(--color-bg)] overflow-hidden">
+    <main className="kasync-app relative flex h-screen w-full items-center justify-center bg-[var(--color-bg)] overflow-hidden">
       <CameraFeed />
       <CanvasOverlay />
       <TransportBar />
@@ -172,10 +242,10 @@ function App() {
 
       {/* Center Readout (Wakandan Holographic Core) */}
       <div 
-        className="absolute z-20 flex flex-col items-center justify-center pointer-events-none"
-        style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+        className="kasync-center-readout absolute z-20 flex flex-col items-center justify-center pointer-events-none"
+        style={{ top: 'var(--kasync-stage-y, 50%)', left: '50%', transform: 'translate(-50%, -50%)' }}
       >
-        <div className="relative w-48 h-48 flex items-center justify-center">
+        <div className="relative w-64 h-64 flex items-center justify-center">
           
           {/* Animated decorative outer rings — hide in Song Mode to not clash with palette */}
           {mode !== 'Song' && (
@@ -214,13 +284,13 @@ function App() {
 
       {/* Low Performance Toast */}
       {isLowPerf && (
-        <div className="absolute top-4 right-4 z-50 bg-[var(--color-danger)]/90 text-white text-xs font-bold px-4 py-2 rounded shadow-lg animate-pulse">
+        <div className="kasync-performance-warning absolute z-50 bg-[var(--color-danger)]/90 text-white text-xs font-bold px-4 py-2 rounded shadow-lg animate-pulse">
           Performance Warning: Visuals reduced to maintain audio fidelity.
         </div>
       )}
 
       {/* Header Logo (Premium Wakandan HUD Style) */}
-      <div className="absolute top-8 left-8 z-40 pointer-events-none flex items-center gap-4">
+      <div className="kasync-logo absolute top-8 left-8 z-40 pointer-events-none flex items-center gap-4">
         {/* Geometric Hexagon Icon */}
         <div className="relative w-10 h-10 flex items-center justify-center">
           <div className="absolute inset-0 border-[1.5px] border-[var(--color-primary)] opacity-40 animate-pulse rotate-45"></div>
@@ -248,7 +318,12 @@ function App() {
       <TutorialOverlay />
       <MidiPanel />
       <ToastContainer />
-    </div>
+      <SessionPanel />
+      <ArrangementPanel />
+      <div className="sr-only" aria-live="polite">
+        Transport {isLowPerf ? 'performance protection enabled' : 'ready'}.
+      </div>
+    </main>
   );
 }
 
