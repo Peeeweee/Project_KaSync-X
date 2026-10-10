@@ -40,7 +40,7 @@ export function Visualizer() {
 
     let animId: number;
     let cachedNotes: string[] = [];
-    let glows: GlowState = {};
+    const glows: GlowState = {};
     let lastKey = '';
     let frameCount = 0;
 
@@ -112,6 +112,8 @@ export function Visualizer() {
     const drawFrame = () => {
       animId = requestAnimationFrame(drawFrame);
       frameCount++;
+
+      if (document.body.classList.contains('low-perf-mode') && frameCount % 3 !== 0) return;
 
       const activeKey = cachedNotes.join(',');
       const active = new Set(cachedNotes);
@@ -268,7 +270,7 @@ export function Visualizer() {
 
   return (
     <div
-      className="absolute top-6 right-6 z-40 flex flex-col overflow-hidden pointer-events-none"
+      className="kasync-visualizer absolute top-6 right-6 z-40 flex flex-col overflow-hidden pointer-events-none"
       style={{
         width: 240,
         background: 'rgba(4,5,12,0.9)',
