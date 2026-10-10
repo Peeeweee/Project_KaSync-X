@@ -18,6 +18,12 @@ export function getScreenHands(hands: HandData[]): ScreenHands {
     return { leftHand: undefined, rightHand: undefined };
   }
 
+  const roleLeft = hands.find(hand => hand.screenRole === 'left');
+  const roleRight = hands.find(hand => hand.screenRole === 'right');
+  if (roleLeft || roleRight) {
+    return { leftHand: roleLeft, rightHand: roleRight };
+  }
+
   if (hands.length === 1) {
     const h = hands[0];
     if (h.indexTipPosition.x < 0.52) {
