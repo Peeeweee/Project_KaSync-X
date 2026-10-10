@@ -29,6 +29,7 @@ export function useAudioTrigger(audioStarted: boolean) {
     const lastChordKey  = { current: '' };
     const releaseTimer  = { current: null as ReturnType<typeof setTimeout> | null };
     const lastFxEffect  = { current: null as string | null }; // tracks last effect zone pinched
+    const fxBaseline = { current: null as EffectsState | null };
 
     const clearRelease = () => {
       if (releaseTimer.current) {
@@ -48,7 +49,7 @@ export function useAudioTrigger(audioStarted: boolean) {
         }
         useMusicStore.getState().setMusicState({ playingNotes: [] });
         releaseTimer.current = null;
-      }, 150); // 150ms debounce — prevents machine-gun rapid re-triggering if camera drops a tracking frame
+      }, noHands ? 90 : 45); // Brief dropout guard without making deliberate note changes feel sticky.
     };
 
     // ── Core trigger function — called on every hand/music state change ──
@@ -107,6 +108,7 @@ export function useAudioTrigger(audioStarted: boolean) {
             const store = useLooperStore.getState();
             const armedTrack = store.tracks.find(t => t.isArmed);
             if (armedTrack) {
+              if (!lastFxEffect.current) fxBaseline.current = { ...armedTrack.effects };
               // Guaranteed mutual exclusivity: only the active effect is true
               const newEffects: EffectsState = {
                 reverb: false,
@@ -121,20 +123,12 @@ export function useAudioTrigger(audioStarted: boolean) {
             lastFxEffect.current = hoveredEffect;
           }
         } else if (!rightPinch && lastFxEffect.current) {
-          // Pinch released — turn off all effects cleanly
+          // Pinch released — restore the persistent FX state from before the gesture.
           const store = useLooperStore.getState();
           const armedTrack = store.tracks.find(t => t.isArmed);
-          if (armedTrack) {
-            const allOff: EffectsState = {
-              reverb: false,
-              delay: false,
-              chorus: false,
-              bitcrusher: false,
-              sustain: false,
-            };
-            store.setTrackProperty(armedTrack.id, 'effects', allOff);
-          }
+          if (armedTrack && fxBaseline.current) store.setTrackProperty(armedTrack.id, 'effects', fxBaseline.current);
           lastFxEffect.current = null;
+          fxBaseline.current = null;
         }
 
       // ── MELODY MODE ──────────────────────────────────────────────────────────
@@ -164,6 +158,8 @@ export function useAudioTrigger(audioStarted: boolean) {
       unsubHands();
       unsubMusic();
       clearRelease();
+      looperService.releaseChord();
+      useMusicStore.getState().setMusicState({ playingNotes: [] });
     };
   }, []); // Empty deps — refs handle all mutable state, subscriptions self-manage
 }
