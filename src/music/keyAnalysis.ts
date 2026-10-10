@@ -1,5 +1,5 @@
-import { CHROMATIC_NOTES, SCALE_PATTERNS } from './scales';
-import { SongChord } from '../store/songStore';
+import { CHROMATIC_NOTES, SCALES } from './scales';
+import type { SongChord } from '../store/songStore';
 import { buildChord } from './chords';
 
 export interface KeySuggestion {
@@ -34,19 +34,17 @@ export function suggestKeysForChords(chords: SongChord[]): KeySuggestion[] {
   // 2. Score each key
   const results: KeySuggestion[] = [];
 
-  const scalesToTest = ['Major', 'Natural Minor'];
+  const scalesToTest = ['Major', 'Minor'];
 
   scalesToTest.forEach(scaleName => {
-    const pattern = SCALE_PATTERNS[scaleName];
+    const pattern = SCALES[scaleName];
     if (!pattern) return;
 
     CHROMATIC_NOTES.forEach((root, rootIndex) => {
       // Build the scale
       const scaleNotes = new Set<string>();
-      let currIndex = rootIndex;
       pattern.forEach(interval => {
-        scaleNotes.add(CHROMATIC_NOTES[currIndex]);
-        currIndex = (currIndex + interval) % 12;
+        scaleNotes.add(CHROMATIC_NOTES[(rootIndex + interval) % 12]);
       });
 
       // Score this scale against played notes
@@ -64,7 +62,7 @@ export function suggestKeysForChords(chords: SongChord[]): KeySuggestion[] {
 
       results.push({
         root,
-        scale: scaleName === 'Natural Minor' ? 'Minor' : scaleName,
+        scale: scaleName,
         score,
         confidence: 0
       });
