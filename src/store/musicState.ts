@@ -45,7 +45,8 @@ export const useMusicStore = create<MusicState>((set) => ({
     reverb: false,
     delay: false,
     chorus: false,
-    bitcrusher: false
+    bitcrusher: false,
+    sustain: false,
   },
   activeNote: null,
   activeQuality: null,
