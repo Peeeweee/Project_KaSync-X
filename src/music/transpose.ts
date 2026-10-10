@@ -1,4 +1,4 @@
-import { CHROMATIC_NOTES, SCALE_PATTERNS } from './scales';
+import { CHROMATIC_NOTES } from './scales';
 
 // Helper to wrap chromatic note indices
 const normalizeIndex = (idx: number) => (idx % 12 + 12) % 12;
