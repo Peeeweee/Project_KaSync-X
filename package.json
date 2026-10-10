@@ -7,6 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b --pretty false",
+    "check": "npm run typecheck && npm run lint && npm run test",
     "format": "prettier --write .",
     "preview": "vite preview"
   },
