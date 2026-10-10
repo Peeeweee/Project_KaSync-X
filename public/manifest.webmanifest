@@ -1,0 +1,19 @@
+{
+  "name": "Kasync.x — Gesture Music Workstation",
+  "short_name": "Kasync.x",
+  "description": "A camera-driven gesture instrument, looper, and song performance workstation.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#030305",
+  "theme_color": "#030305",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
