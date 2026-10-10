@@ -1,6 +1,7 @@
 import { Midi } from '@tonejs/midi';
 import type { Track } from './trackModel';
 import { toast } from '../store/toastStore';
+import { ticksToSeconds } from './timing';
 
 export function exportMIDI(tracks: Track[], bpm: number) {
   // We export all tracks that have events, ignoring muted tracks.
@@ -33,8 +34,8 @@ export function exportMIDI(tracks: Track[], bpm: number) {
       event.notes.forEach(noteName => {
         midiTrack.addNote({
           name: noteName,
-          time: event.time,
-          duration: event.duration,
+          time: ticksToSeconds(event.tick, bpm),
+          duration: ticksToSeconds(event.durationTicks, bpm),
           velocity: event.velocity
         });
       });
