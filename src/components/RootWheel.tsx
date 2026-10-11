@@ -53,11 +53,11 @@ export function RootWheel() {
   const svgRef = useRef<SVGSVGElement>(null);
   const layoutCache = useRef({ width: 0, height: 0, left: 0, top: 0 });
 
-  const SIZE = mode === 'Chord' ? 550 : 650;
+  const SIZE = 550;
   const CENTER = SIZE / 2;
-  const INNER_RADIUS = mode === 'Chord' ? 90 : 110;
-  const ROOT_RADIUS = mode === 'Chord' ? 190 : 240;
-  const BASS_RADIUS = mode === 'Chord' ? 240 : 310;
+  const INNER_RADIUS = 75;
+  const ROOT_RADIUS = mode === 'Chord' ? 195 : 240;
+  const BASS_RADIUS = 250;
 
   const rootWedge = useMemo(
     () => getWedgePath(INNER_RADIUS, ROOT_RADIUS, 30),
@@ -69,7 +69,11 @@ export function RootWheel() {
   );
 
   useEffect(() => {
-    if (!svgRef.current) return;
+    if (svgRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      layoutCache.current = { width: rect.width, height: rect.height, left: rect.left, top: rect.top };
+    }
+    if (typeof ResizeObserver === 'undefined' || !svgRef.current) return;
     const observer = new ResizeObserver(() => {
       if (svgRef.current) {
         const rect = svgRef.current.getBoundingClientRect();
@@ -118,7 +122,8 @@ export function RootWheel() {
       const renderedSize = measuredWidth > 0 ? measuredWidth : 400;
       const scale = renderedSize / SIZE;
       const INNER_DEAD = INNER_RADIUS * scale;
-      const OUTER_DEAD = (BASS_RADIUS + 12) * scale;
+      const maxOuterRadius = mode === 'Chord' ? BASS_RADIUS : ROOT_RADIUS;
+      const OUTER_DEAD = (maxOuterRadius + 12) * scale;
 
       const isInActiveZone = dist >= INNER_DEAD && dist <= OUTER_DEAD;
 
@@ -134,7 +139,7 @@ export function RootWheel() {
         let angle = Math.atan2(dx, -rawDy);
         if (angle < 0) angle += 2 * Math.PI;
 
-        const isBassOverride = dist > (ROOT_RADIUS + 3) * scale;
+        const isBassOverride = mode === 'Chord' && dist > (ROOT_RADIUS + 3) * scale;
 
         const rootIndex = CHROMATIC_NOTES.indexOf(currentKey);
         const selectedIndex = getActiveNoteIndex(
@@ -192,13 +197,13 @@ export function RootWheel() {
     >
       <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
         {/* Holographic Concentric Rings */}
-        <g style={{ transformOrigin: 'center' }} className="animate-spin-slow opacity-40">
-          <circle cx={CENTER} cy={CENTER} r={BASS_RADIUS + 15} fill="none" stroke="var(--color-primary)" strokeWidth="1.5" strokeDasharray="4 12" />
+        <g style={{ transformOrigin: 'center' }} className="opacity-30">
+          <circle cx={CENTER} cy={CENTER} r={(mode === 'Chord' ? BASS_RADIUS : ROOT_RADIUS) + 12} fill="none" stroke="var(--color-primary)" strokeWidth="1" />
         </g>
-        <g style={{ transformOrigin: 'center', animationDirection: 'reverse', animationDuration: '30s' }} className="animate-spin-slow opacity-30">
-          <circle cx={CENTER} cy={CENTER} r={BASS_RADIUS + 25} fill="none" stroke="var(--color-secondary)" strokeWidth="0.5" strokeDasharray="20 10 5 10" />
+        <g style={{ transformOrigin: 'center' }} className="opacity-25">
+          <circle cx={CENTER} cy={CENTER} r={(mode === 'Chord' ? BASS_RADIUS : ROOT_RADIUS) + 20} fill="none" stroke="var(--color-secondary)" strokeWidth="0.5" />
         </g>
-        <circle cx={CENTER} cy={CENTER} r={BASS_RADIUS} fill="rgba(3,3,5,0.6)" stroke="var(--color-metal)" strokeWidth="1" />
+        <circle cx={CENTER} cy={CENTER} r={mode === 'Chord' ? BASS_RADIUS : ROOT_RADIUS} fill="rgba(3,3,5,0.6)" stroke="var(--color-metal)" strokeWidth="1" />
         
         <g transform={`translate(${CENTER}, ${CENTER})`}>
           {CHROMATIC_NOTES.map((note, index) => {
@@ -241,9 +246,11 @@ export function RootWheel() {
               <g key={note}>
                 {/* Wedges */}
                 <g transform={`rotate(${angleDeg})`}>
-                  <g className={bassClass} style={{ transformOrigin: '0 0' }}>
+                  {mode === 'Chord' && (
+                    <g className={bassClass} style={{ transformOrigin: '0 0' }}>
                     <path d={bassWedge} fill={bassFill} stroke={bassStroke} strokeWidth="2" />
-                  </g>
+                    </g>
+                  )}
                   <g className={rootClass} style={{ transformOrigin: '0 0' }}>
                     <path d={rootWedge} fill={rootFill} stroke={rootStroke} strokeWidth="2" />
                   </g>
@@ -253,7 +260,7 @@ export function RootWheel() {
                   x={rx}
                   y={ry}
                   fill={isRootActive ? "white" : "var(--color-primary-glow)"}
-                  fontSize="12"
+                  fontSize={mode === 'Chord' ? "13" : "16"}
                   fontWeight="bold"
                   letterSpacing="2"
                   textAnchor="middle"
