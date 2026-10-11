@@ -16,15 +16,19 @@ export function QualityWheel() {
 
   const SIZE = 550;
   const CENTER = SIZE / 2;
-  const INNER_RADIUS = 90;
-  const BASIC_RADIUS = 190;
-  const EXTENDED_RADIUS = 240;
+  const INNER_RADIUS = 75;
+  const BASIC_RADIUS = 195;
+  const EXTENDED_RADIUS = 250;
 
   const basicWedge = useMemo(() => getWedgePath(INNER_RADIUS, BASIC_RADIUS, 360 / CHORD_QUALITIES.basic.length), []);
   const extendedWedge = useMemo(() => getWedgePath(BASIC_RADIUS + 5, EXTENDED_RADIUS, 360 / CHORD_QUALITIES.extended.length), []);
 
   useEffect(() => {
-    if (!svgRef.current) return;
+    if (svgRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      layoutCache.current = { width: rect.width, height: rect.height, left: rect.left, top: rect.top };
+    }
+    if (typeof ResizeObserver === 'undefined' || !svgRef.current) return;
     const observer = new ResizeObserver(() => {
       if (svgRef.current) {
         const rect = svgRef.current.getBoundingClientRect();
@@ -128,11 +132,11 @@ export function QualityWheel() {
     >
       <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
         {/* Holographic Concentric Rings */}
-        <g style={{ transformOrigin: 'center' }} className="animate-spin-slow opacity-40">
-          <circle cx={CENTER} cy={CENTER} r={EXTENDED_RADIUS + 15} fill="none" stroke="var(--color-secondary)" strokeWidth="1.5" strokeDasharray="4 12" />
+        <g style={{ transformOrigin: 'center' }} className="opacity-30">
+          <circle cx={CENTER} cy={CENTER} r={EXTENDED_RADIUS + 15} fill="none" stroke="var(--color-secondary)" strokeWidth="1" />
         </g>
-        <g style={{ transformOrigin: 'center', animationDirection: 'reverse', animationDuration: '45s' }} className="animate-spin-slow opacity-30">
-          <circle cx={CENTER} cy={CENTER} r={EXTENDED_RADIUS + 25} fill="none" stroke="var(--color-primary-glow)" strokeWidth="0.5" strokeDasharray="30 15 5 15" />
+        <g style={{ transformOrigin: 'center' }} className="opacity-25">
+          <circle cx={CENTER} cy={CENTER} r={EXTENDED_RADIUS + 25} fill="none" stroke="var(--color-primary-glow)" strokeWidth="0.5" />
         </g>
         <circle cx={CENTER} cy={CENTER} r={EXTENDED_RADIUS} fill="rgba(3,3,5,0.6)" stroke="var(--color-metal)" strokeWidth="1" />
         <g transform={`translate(${CENTER}, ${CENTER})`}>
@@ -162,7 +166,7 @@ export function QualityWheel() {
                   x={tx}
                   y={ty}
                   fill={isActive ? "white" : "var(--color-secondary)"}
-                  fontSize="12"
+                  fontSize="13"
                   fontWeight="bold"
                   letterSpacing="1"
                   textAnchor="middle"
@@ -203,7 +207,7 @@ export function QualityWheel() {
                   x={tx}
                   y={ty}
                   fill={isActive ? "white" : "var(--color-secondary)"}
-                  fontSize="10"
+                  fontSize="11"
                   fontWeight="500"
                   letterSpacing="1"
                   textAnchor="middle"
