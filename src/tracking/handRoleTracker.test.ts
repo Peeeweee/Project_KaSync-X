@@ -24,10 +24,10 @@ describe('HandRoleTracker', () => {
     expect(result.find(item => item.handedness === 'Right')?.screenRole).toBe('right');
   });
 
-  it('keeps a hand role stable after it crosses the center', () => {
+  it('updates single hand role based on screen side', () => {
     const tracker = new HandRoleTracker();
     expect(tracker.assign([hand('Left', 0.2)])[0].screenRole).toBe('left');
-    expect(tracker.assign([hand('Left', 0.8)])[0].screenRole).toBe('left');
+    expect(tracker.assign([hand('Left', 0.8)])[0].screenRole).toBe('right');
   });
 
   it('clears remembered roles on reset', () => {
