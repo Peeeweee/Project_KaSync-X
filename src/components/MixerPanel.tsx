@@ -11,7 +11,7 @@ import { useArrangementStore } from '../store/arrangementState';
 const INSTRUMENTS: InstrumentType[] = ['Subtractive', 'FM', 'Electric Piano', 'Pad'];
 
 export function MixerPanel() {
-  const { tracks, setTrackProperty, armTrack, clearTrackEvents, isGlobalRecording, bpm, loopBars, beatsPerBar, masterVolume, setMasterVolume } = useLooperStore();
+  const { tracks, setTrackProperty, armTrack, clearTrackEvents, isGlobalRecording, bpm, loopBars, beatsPerBar, masterVolume } = useLooperStore();
   const [isExportingWav, setIsExportingWav] = useState(false);
   const { isPanelOpen, togglePanel } = useMidiStore();
   const toggleArrangement = useArrangementStore(state => state.toggle);
@@ -90,23 +90,8 @@ export function MixerPanel() {
             ⚡
           </button>
         </div>
-        </div>
-        
-        {/* Master Volume Slider */}
-        <div className="flex items-center gap-2 px-1 pb-1">
-          <span className="text-[8px] text-[var(--color-metal-light)] font-display uppercase tracking-widest">VOL</span>
-          <input 
-            aria-label="Master Volume"
-            type="range" 
-            min="0" 
-            max="1" 
-            step="0.01" 
-            value={masterVolume}
-            onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
-            className="flex-1 h-1 bg-[var(--color-metal-dark)] rounded-full appearance-none outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:bg-[var(--color-primary-glow)] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-[0_0_5px_var(--color-primary-glow)] hover:[&::-webkit-slider-thumb]:w-3 hover:[&::-webkit-slider-thumb]:h-3 transition-all"
-          />
-        </div>
       </div>
+    </div>
 
       <div className="kasync-mixer-tracks flex flex-col gap-1.5 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-280px)] custom-scrollbar">
         {tracks.map((track) => (
