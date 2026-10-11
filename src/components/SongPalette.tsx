@@ -10,8 +10,8 @@ import type { SongSection } from '../store/songStore';
 
 const SIZE = 420;
 const CENTER = 210;
-const OUTER_R = 175;
-const INNER_R = 65;
+const OUTER_R = 195;
+const INNER_R = 50;
 const GAP_DEG = 3;
 
 function makeWedgePath(
@@ -218,7 +218,7 @@ function ChordWheel({
     >
       <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
         <circle
-          cx={CENTER} cy={CENTER} r={OUTER_R + 14}
+          cx={CENTER} cy={CENTER} r={OUTER_R + 10}
           fill="none" stroke={sectionColor} strokeWidth="0.5" opacity="0.25" strokeDasharray="6 10"
         >
           <animateTransform
@@ -271,7 +271,7 @@ function ChordWheel({
                 />
                 <text
                   x={tx} y={ty + 1} textAnchor="middle" dominantBaseline="middle"
-                  fill={isActive ? '#ffffff' : sectionColor} fontSize={isActive ? '16' : '14'} fontWeight="bold" letterSpacing="0.5" opacity={isActive ? 1 : 0.65}
+                  fill={isActive ? '#ffffff' : sectionColor} fontSize={isActive ? '17' : '15'} fontWeight="bold" letterSpacing="0.5" opacity={isActive ? 1 : 0.7}
                   style={{ transition: 'font-size 0.1s, opacity 0.15s', filter: isActive ? `drop-shadow(0 0 8px ${sectionColor})` : 'none', pointerEvents: 'none' }}
                 >
                   {chordLabel}
@@ -376,7 +376,7 @@ function FxWheel() {
     >
       <svg width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
         <circle
-          cx={CENTER} cy={CENTER} r={OUTER_R + 14}
+          cx={CENTER} cy={CENTER} r={OUTER_R + 10}
           fill="none" stroke="#6E7C9C" strokeWidth="0.5" opacity="0.25" strokeDasharray="6 10"
         >
           <animateTransform
@@ -417,13 +417,13 @@ function FxWheel() {
                 />
                 <text
                   x={tx} y={ty + 1} textAnchor="middle" dominantBaseline="middle"
-                  fill={isActive || isEnabled ? '#ffffff' : '#6E7C9C'} fontSize={isActive ? '14' : '12'} fontWeight="bold" letterSpacing="1" opacity={isActive || isEnabled ? 1 : 0.65}
+                  fill={isActive || isEnabled ? '#ffffff' : '#6E7C9C'} fontSize={isActive ? '15' : '13'} fontWeight="bold" letterSpacing="1" opacity={isActive || isEnabled ? 1 : 0.7}
                   style={{ transition: 'font-size 0.1s, opacity 0.15s', filter: isActive || isEnabled ? `drop-shadow(0 0 8px ${fx.color})` : 'none', pointerEvents: 'none' }}
                 >
                   {fx.label}
                 </text>
                 {isEnabled && (
-                  <circle cx={tx} cy={ty + 14} r="3" fill={fx.color} opacity="0.8" />
+                  <circle cx={tx} cy={ty + 15} r="3" fill={fx.color} opacity="0.8" />
                 )}
               </g>
             );
