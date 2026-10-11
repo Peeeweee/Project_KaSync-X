@@ -79,7 +79,7 @@ export function TransportBar() {
   const {
     isPlaying, isGlobalRecording, isCountingIn, quantize, bpm, metronomeEnabled,
     countInBars, overdubEnabled, undoHistory, redoHistory, setTransportState,
-    tracks, setTrackProperty, undoTrack, redoTrack,
+    tracks, setTrackProperty, undoTrack, redoTrack, masterVolume, setMasterVolume
   } = useLooperStore();
   const [showFX, setShowFX] = useState(false);
 
@@ -218,6 +218,19 @@ export function TransportBar() {
               onChange={(e) => setTransportState({ bpm: Math.max(30, Math.min(300, parseInt(e.target.value) || 120)) })}
               className={`${hudValueClass} w-10 text-[#00f0ff]`}
             />
+          </div>
+
+          <div className="flex flex-col items-center">
+            <span className={hudLabelClass}>VOL</span>
+            <div className="flex h-[20px] items-center">
+              <input 
+                aria-label="Master Volume"
+                type="range" min="0" max="1" step="0.01" 
+                value={masterVolume} 
+                onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+                className="w-12 h-1 bg-white/10 rounded-full appearance-none outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-[#00f0ff] [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:shadow-[0_0_8px_#00f0ff] cursor-pointer transition-all"
+              />
+            </div>
           </div>
 
           <div className="flex flex-col items-center">
