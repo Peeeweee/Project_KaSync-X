@@ -65,9 +65,10 @@ export function useAudioTrigger(audioStarted: boolean) {
       if (mode === 'Chord') {
         const leftPinch  = leftHand?.isPinching ?? false;
         const rightPinch = rightHand?.isPinching ?? false;
+        const isPinching = leftPinch || rightPinch;
 
         // Either hand pinching (or both) triggers the chord!
-        if ((leftPinch || rightPinch) && hoveredRoot) {
+        if (isPinching && hoveredRoot) {
           clearRelease();
           const quality = hoveredQuality || 'maj';
           const notes = buildChord(hoveredRoot, quality, hoveredBass);
