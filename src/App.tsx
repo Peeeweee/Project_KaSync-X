@@ -167,28 +167,30 @@ function App() {
   // ── Audio trigger (direct store subscription — bypasses React render cycle) ──
   useAudioTrigger(audioStarted);
 
-  // Ensure AudioContext is unlocked on ANY user interaction (click, tap, keypress)
+  // Ensure AudioContext is unlocked and resumed on ANY user interaction (click, tap, keypress)
   useEffect(() => {
-    if (audioStarted) return;
-
-    const unlockAudio = async () => {
+    const resumeAudio = async () => {
       try {
-        await looperService.startAudioContext();
-        setAudioStarted(true);
+        if (!audioStarted) {
+          await looperService.startAudioContext();
+          setAudioStarted(true);
+        } else if (Tone.context.state !== 'running') {
+          await Tone.context.resume();
+        }
       } catch {
         // Ignore
       }
     };
-    window.addEventListener('pointerdown', unlockAudio, { passive: true });
-    window.addEventListener('keydown', unlockAudio, { passive: true });
+    window.addEventListener('pointerdown', resumeAudio, { passive: true });
+    window.addEventListener('keydown', resumeAudio, { passive: true });
     return () => {
-      window.removeEventListener('pointerdown', unlockAudio);
-      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('pointerdown', resumeAudio);
+      window.removeEventListener('keydown', resumeAudio);
     };
   }, [audioStarted]);
 
   const { displayText, isPlaying } = useMemo(() => {
-    let text = 'OFF';
+    let text = 'READY';
     let playing = false;
     const { leftHand, rightHand } = getScreenHands(hands);
 
@@ -200,6 +202,8 @@ function App() {
         text = formatChordName(hoveredRoot, hoveredQuality, hoveredBass, currentKey);
       } else if (hoveredRoot) {
         text = formatChordName(hoveredRoot, 'maj', hoveredBass, currentKey);
+      } else {
+        text = hands.length > 0 ? 'HOVER' : 'READY';
       }
     } else if (mode === 'Song') {
       playing = !!leftHand?.isPinching;
@@ -207,12 +211,16 @@ function App() {
         const quality = hoveredQuality || 'maj';
         const keyToUse = songSections?.[activeSectionIndex]?.key ?? songDefaultKey ?? currentKey;
         text = formatChordName(hoveredRoot, quality, hoveredBass, keyToUse);
+      } else {
+        text = hands.length > 0 ? 'HOVER' : 'READY';
       }
     } else {
       const h = leftHand ?? rightHand ?? hands[0];
       playing = !!h?.isPinching;
       if (hoveredRoot) {
         text = formatChordName(hoveredRoot, '', hoveredBass, currentKey);
+      } else {
+        text = hands.length > 0 ? 'HOVER' : 'READY';
       }
     }
     return { displayText: text, isPlaying: playing };
@@ -245,28 +253,32 @@ function App() {
         className="kasync-center-readout absolute z-20 flex flex-col items-center justify-center pointer-events-none"
         style={{ top: 'var(--kasync-stage-y, 50%)', left: '50%', transform: 'translate(-50%, -50%)' }}
       >
-        <div className="relative w-64 h-64 flex items-center justify-center">
+        <div className="relative w-28 h-28 flex items-center justify-center">
           
-          {/* Animated decorative outer rings — hide in Song Mode to not clash with palette */}
+          {/* Holographic orbital rings — clean aesthetic, non-distracting */}
           {mode !== 'Song' && (
             <>
-              <div className="absolute inset-0 rounded-full border-2 border-dashed border-[var(--color-primary-glow)] opacity-30 animate-spin-slow" style={{ willChange: 'transform' }}></div>
-              <div className="absolute inset-1.5 rounded-full border-[1px] border-[var(--color-secondary)] opacity-40 animate-[spin_12s_linear_infinite_reverse]" style={{ willChange: 'transform' }}></div>
-              <div className="absolute inset-4 rounded-full border-2 border-transparent border-t-[var(--color-primary)] border-b-[var(--color-primary)] opacity-40 animate-[spin_4s_ease-in-out_infinite_alternate]" style={{ willChange: 'transform' }}></div>
+              <div className="absolute inset-0 rounded-full border border-[var(--color-primary-glow)]/30 opacity-40"></div>
+              <div className="absolute inset-1 rounded-full border border-[var(--color-secondary)]/30 opacity-30"></div>
+              {isPlaying && (
+                <div className="absolute inset-0 rounded-full border-2 border-[var(--color-primary-glow)] animate-ping opacity-30"></div>
+              )}
             </>
           )}
           
           {/* Main Core */}
-          <div className="absolute inset-6 rounded-full bg-black/70 backdrop-blur-xl shadow-[0_0_30px_rgba(157,78,221,0.3)] border border-[var(--color-metal)] flex items-center justify-center overflow-hidden">
+          <div className="absolute inset-2.5 rounded-full bg-black/80 backdrop-blur-xl shadow-[0_0_15px_rgba(157,78,221,0.3)] border border-[var(--color-metal)] flex items-center justify-center overflow-hidden">
              {/* Subtle internal pulse/glow */}
              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(157,78,221,0.25)_0%,transparent_70%)]"></div>
              {isPlaying && <div className="absolute inset-0 bg-[var(--color-primary-glow)]/20 animate-pulse"></div>}
           </div>
           
           <span 
-            className={`relative z-10 text-4xl font-black tracking-widest transition-all duration-300 ml-2 ${isPlaying ? 'text-white drop-shadow-[0_0_20px_var(--color-primary-glow)] scale-110' : 'text-[var(--color-primary-glow)] opacity-60 drop-shadow-[0_0_10px_var(--color-primary-glow)]'}`}
+            className={`relative z-10 font-black tracking-widest transition-all duration-300 ml-0.5 select-none text-center px-1 ${
+              displayText.length > 7 ? 'text-xs md:text-sm' : displayText.length > 5 ? 'text-sm md:text-base' : 'text-base md:text-lg'
+            } ${isPlaying ? 'text-white drop-shadow-[0_0_12px_var(--color-primary-glow)] scale-105' : 'text-[var(--color-primary-glow)] opacity-70 drop-shadow-[0_0_6px_var(--color-primary-glow)]'}`}
           >
-            {displayText === 'OFF' && isPlaying ? '' : displayText}
+            {displayText}
           </span>
         </div>
       </div>
@@ -282,12 +294,7 @@ function App() {
         </div>
       )}
 
-      {/* Low Performance Toast */}
-      {isLowPerf && (
-        <div className="kasync-performance-warning absolute z-50 bg-[var(--color-danger)]/90 text-white text-xs font-bold px-4 py-2 rounded shadow-lg animate-pulse">
-          Performance Warning: Visuals reduced to maintain audio fidelity.
-        </div>
-      )}
+
 
       {/* Header Logo (Premium Wakandan HUD Style) */}
       <div className="kasync-logo absolute top-8 left-8 z-40 pointer-events-none flex items-center gap-4">
