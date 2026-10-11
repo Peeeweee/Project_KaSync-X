@@ -105,7 +105,7 @@ export class InstrumentService {
         });
         break;
     }
-    synth.maxPolyphony = 16;
+    synth.maxPolyphony = 32;
     synth.volume.value = -8; // Loud, clear, punchy volume with headroom for chords
     synth.connect(this.chorus);
     return synth;
