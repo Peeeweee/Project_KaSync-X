@@ -42,7 +42,8 @@ describe('tracking capture', () => {
     expect(report.frames[0].pinchMetricVersion).toBe(2);
     expect(report.settings.pinchMetricVersion).toBe(2);
     expect(report.frames[0].keyStates).toEqual([{ hand: 'Left', pinching: false,
-      down: false, pressId: 0, reason: null, pinchDistance: 1, point: false, role: null }]);
+      down: false, pressId: 0, reason: null, pinchDistance: 1, point: false, role: null,
+      fingerCurls:null, articulatingFingers:[] }]);
     expect(report.frames[1].matchesExpected).toBe(false);
     expect(useTrackingCaptureStore.getState().status).toBe('idle');
   });
@@ -55,6 +56,19 @@ describe('tracking capture', () => {
     expect(report.summary.completedFps).toBe(0);
     expect(report.summary.pipelineP95Ms).toBeNull();
     expect(report.summary.labelledAgreementPercent).toBeNull();
+  });
+  it('keeps finger angles and release reasons from the detection, even if later samples mutate the hand', () => {
+    startTrackingCapture('unlabelled');
+    const hand: HandData = { ...open, isPinching:true, isKeyDown:false, pressId:7,
+      articulationReason:'finger-lift', fingerCurls:[.405,.2,null], articulatingFingers:[] };
+    recordTrackingCapture(3000,10,20,0,[hand]);
+    hand.fingerCurls![0] = .5;
+    hand.articulatingFingers!.push('Middle');
+    hand.articulationReason = 'finger-press';
+    stopTrackingCapture(3100);
+    expect(useTrackingCaptureStore.getState().report!.frames[0].keyStates![0]).toMatchObject({
+      down:false, reason:'finger-lift', fingerCurls:[.405,.2,null], articulatingFingers:[],
+    });
   });
   it('can cancel preparation without leaving recording timers active', () => {
     startTrackingCapture('pinch');
