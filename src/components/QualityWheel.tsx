@@ -111,7 +111,7 @@ export function QualityWheel() {
         }
       } else {
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
-        const music = useMusicStore.getState();
+        // const music = useMusicStore.getState();
         // if (music.hoveredQuality) music.setMusicState({ hoveredQuality: null });
       }
     });
