@@ -26,6 +26,7 @@ export type HandTrackingWorkerResponse =
       type: 'RESULTS';
       requestId: number;
       landmarks: Landmark[][];
+      worldLandmarks?: Landmark[][];
       handednesses: Category[][];
       inferenceMs: number;
     }
