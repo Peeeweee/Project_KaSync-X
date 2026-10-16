@@ -1,5 +1,6 @@
 import type { Landmark } from '@mediapipe/tasks-vision';
 import { landmarkToScreen } from './coordUtils';
+import { normalizePinchThresholds } from './pinchSettings';
 
 export interface GestureOptions {
   previousPinching?: boolean;
@@ -13,9 +14,9 @@ export interface GestureOptions {
   mirrored?: boolean;
 }
 
-function distance3d(a: Landmark, b: Landmark): number {
+function distance3d(a: Landmark, b: Landmark, imageYScale: number): number {
   const dx = a.x - b.x;
-  const dy = a.y - b.y;
+  const dy = (a.y - b.y) * imageYScale;
   const dz = a.z - b.z;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
@@ -27,15 +28,17 @@ export function computeGestures(
 ) {
   const thumbTip = landmarks[4];
   const indexTip = landmarks[8];
-  const palmWidth = distance3d(landmarks[5], landmarks[17]);
-  const palmLength = distance3d(landmarks[0], landmarks[9]);
+  // MediaPipe normalizes X/Z by width and Y by height. Convert before taking
+  // distances, otherwise rotating the same physical hand changes its pinch gap.
+  const imageYScale = videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0
+    ? videoEl.videoHeight / videoEl.videoWidth : 1;
+  const palmWidth = distance3d(landmarks[5], landmarks[17], imageYScale);
+  const palmLength = distance3d(landmarks[0], landmarks[9], imageYScale);
   const handScale = Math.max(palmWidth, palmLength * 1.5, 0.04);
-  const pinchDistance = distance3d(thumbTip, indexTip) / handScale;
+  const pinchDistance = distance3d(thumbTip, indexTip, imageYScale) / handScale;
 
-  const pinchThreshold = options.pinchThreshold ?? 0.32;
-  const pinchReleaseThreshold = Math.max(
-    pinchThreshold + 0.03,
-    options.pinchReleaseThreshold ?? 0.44,
+  const { pinchThreshold, pinchReleaseThreshold } = normalizePinchThresholds(
+    options.pinchThreshold, options.pinchReleaseThreshold,
   );
   const activeThreshold = options.previousPinching ? pinchReleaseThreshold : pinchThreshold;
   const isPinching = pinchDistance < activeThreshold;
@@ -57,7 +60,7 @@ export function computeGestures(
   const wrist        = landmarks[0]; // wrist
 
   // Vertical tap score: measures index finger downward dip relative to PIP joint
-  const verticalTapScore = (indexTip.y - indexPIP.y) / handScale;
+  const verticalTapScore = (indexTip.y - indexPIP.y) * imageYScale / handScale;
 
   const tapStrikeThreshold = options.tapThreshold ?? 0.0;
   const tapReleaseThreshold = options.tapReleaseThreshold ?? -0.15;
@@ -76,7 +79,7 @@ export function computeGestures(
   const isForwardPush = forwardThrust > activePointThreshold;
 
   // Index finger extension: finger must not be closed into a tight fist
-  const indexLength = distance3d(indexKnuckle, indexTip) / handScale;
+  const indexLength = distance3d(indexKnuckle, indexTip, imageYScale) / handScale;
   const isIndexExtended = indexLength > 0.25;
 
   // Pose candidate only. Live tracking applies PointTapTracker to require motion
@@ -109,7 +112,7 @@ export function computeGestures(
   palmY /= palmBases.length;
 
   const middleBase = middleMCP;
-  const handRotation = Math.atan2(middleBase.y - wrist.y, middleBase.x - wrist.x);
+  const handRotation = Math.atan2((middleBase.y - wrist.y) * imageYScale, middleBase.x - wrist.x);
 
   // Use proper screen-space coordinates if video element is available
   // This accounts for object-cover cropping + mirror flip
@@ -131,6 +134,7 @@ export function computeGestures(
     palmTilt: (wrist.z - middleMCP.z) / handScale,
     palmYaw: (landmarks[5].z - landmarks[17].z) / handScale,
     handScale,
+    imageYScale,
     cameraTipY: indexTip.y,
     cameraTipX: indexTip.x,
     verticalTapScore,
