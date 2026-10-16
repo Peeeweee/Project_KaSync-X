@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useHandStore } from '../store/handState';
+import { isVolumeHand } from '../store/volumeGesture';
 import { useSongStore } from '../store/songStore';
 import { useMusicStore } from '../store/musicState';
 import type { EffectsState } from '../store/musicState';
@@ -154,6 +155,7 @@ function ChordWheel({
       const hands = state.smoothedHands;
       const { leftHand } = getScreenHands(hands);
       const hand = leftHand ?? (hands.length === 1 ? hands[0] : undefined);
+      if (hand && isVolumeHand(hand)) return;
       if (!state.isTracking || !hand) {
         setHoveredIndex(null);
         prevHoveredRef.current = null;
@@ -349,6 +351,7 @@ function FxWheel() {
     const unsub = useHandStore.subscribe((state) => {
       const hands = state.smoothedHands;
       const { rightHand: hand } = getScreenHands(hands);
+      if (hand && isVolumeHand(hand)) return;
       if (!state.isTracking || !hand) {
         setHoveredIndex(null);
         prevHoveredRef.current = null;
