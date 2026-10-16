@@ -24,6 +24,7 @@ const { mockAudioNode, mockPart } = vi.hoisted(() => ({
     start: vi.fn().mockReturnThis(),
     chain: vi.fn().mockReturnThis(),
     wet: { value: 0, rampTo: vi.fn() },
+    feedback: { value: 0.35, rampTo: vi.fn() },
     volume: { value: 0, rampTo: vi.fn() },
     gain: { value: 1, cancelScheduledValues: vi.fn(), rampTo: vi.fn() },
   },
@@ -169,7 +170,7 @@ describe('Pipeline E2E Test Harness', () => {
     await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
     act(() => useMusicStore.getState().setMusicState({ mode: 'Melody', hoveredRoot: null }));
     mockAudioNode.triggerAttack.mockClear();
-    const publish = (down: boolean, id: number, x = 0.5, y = 0.35) => {
+    const publish = (down: boolean, id: number, x = 0.75, y = 0.35) => {
       const landmarks = createHand(down, x, y);
       const data = { ...computeGestures(landmarks), landmarks, handedness: 'Right',
         isPinching: down, isPointPressed: false, isKeyDown: down, pressId: id };
@@ -182,7 +183,7 @@ describe('Pipeline E2E Test Harness', () => {
       publish(false, id);
       expect(useMusicStore.getState().playingNotes).toEqual([]);
     }
-    publish(true, 8, 0.35, 0.5);
+    publish(true, 8, 0.6, 0.5);
     expect(mockAudioNode.triggerAttack).toHaveBeenCalledTimes(8);
     expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
   });
@@ -214,17 +215,17 @@ describe('Pipeline E2E Test Harness', () => {
     render(<App />);
     await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
     act(() => useMusicStore.getState().setMusicState({ mode: 'Melody', hoveredRoot: null }));
-    const landmarks = createHand(false, 0.5, 0.35);
+    const landmarks = createHand(false, 0.75, 0.35);
     landmarks[8] = { ...landmarks[8], z: -0.1 };
     act(() => processAndSetHand(landmarks, 'Right'));
     expect(looperService.triggerNote).toHaveBeenCalled();
 
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
     expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
-    act(() => processAndSetHand(createHand(false, 0.5, 0.35), 'Right'));
+    act(() => processAndSetHand(createHand(false, 0.75, 0.35), 'Right'));
     expect(mockAudioNode.gain.rampTo).toHaveBeenLastCalledWith(0, 0.006, 0);
     const strikes = vi.mocked(looperService.triggerNote).mock.calls.length;
-    act(() => processAndSetHand(createHand(false, 0.5, 0.35), 'Right'));
+    act(() => processAndSetHand(createHand(false, 0.75, 0.35), 'Right'));
     expect(looperService.triggerNote).toHaveBeenCalledTimes(strikes);
     expect(useMusicStore.getState().playingNotes).toEqual([]);
   });
@@ -244,8 +245,8 @@ describe('Pipeline E2E Test Harness', () => {
 
     // 2. Generate pinch at North (12 o'clock -> Angle 0 -> Index 0 -> 'C')
     // Center of screen is roughly 0.5, 0.5. 
-    // Wheel center is 50% for Melody. North (Angle 0) -> y < 0.5. So x: 0.5, y: 0.35.
-    const hand = createHand(true, 0.5, 0.35);
+    // Melody now uses the left wheel. Mirrored camera x=0.75 maps to screen x=0.25.
+    const hand = createHand(true, 0.75, 0.35);
     
     act(() => {
       processAndSetHand(hand, 'Right');
@@ -257,7 +258,7 @@ describe('Pipeline E2E Test Harness', () => {
     expect(mockAudioNode.triggerAttack).toHaveBeenCalled();
     
     // 4. Release hand
-    const releasedHand = createHand(false, 0.5, 0.35);
+    const releasedHand = createHand(false, 0.75, 0.35);
     act(() => {
       processAndSetHand(releasedHand, 'Right');
     });
@@ -337,13 +338,13 @@ describe('Pipeline E2E Test Harness', () => {
       useMusicStore.getState().setMusicState({ mode: 'Melody' });
     });
 
-    const hand = createHand(true, 0.5, 0.35); // Play C4
+    const hand = createHand(true, 0.75, 0.35); // Play C4
     act(() => {
       processAndSetHand(hand, 'Right');
     });
 
     // 3. Release note
-    const releaseHand = createHand(false, 0.5, 0.35);
+    const releaseHand = createHand(false, 0.75, 0.35);
     act(() => {
       processAndSetHand(releaseHand, 'Right');
     });
