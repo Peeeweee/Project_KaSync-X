@@ -6,6 +6,7 @@ import { looperService } from '../looper/recorder';
 import { buildChord } from '../music/chords';
 import { getScreenHands } from '../tracking/handUtils';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
+import { isVolumeHand } from '../store/volumeGesture';
 
 /** Live key-down/up events bypass React rendering and preserve performed durations. */
 export function useAudioTrigger(audioStarted: boolean) {
@@ -13,7 +14,9 @@ export function useAudioTrigger(audioStarted: boolean) {
   useEffect(() => { started.current = audioStarted; }, [audioStarted]);
   useEffect(() => {
     let owner: string | null = null;
+    let ownerSource: 'pinch' | 'point' | 'key' | null = null;
     let lastKey = '';
+    let lastSelection = '';
     let previousMode = useMusicStore.getState().mode;
     const previous = new Map<string, { down: boolean; id: number }>();
     let releaseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -27,7 +30,9 @@ export function useAudioTrigger(audioStarted: boolean) {
     };
     const release = () => {
       owner = null;
+      ownerSource = null;
       lastKey = '';
+      lastSelection = '';
       if (previousMode === 'Melody') looperService.releaseNote(false, true);
       else looperService.releaseChord(false, true);
       useMusicStore.getState().setMusicState({ playingNotes: [] });
@@ -43,8 +48,14 @@ export function useAudioTrigger(audioStarted: boolean) {
     };
     const trigger = (freshFrame = false) => {
       if (!started.current) return;
-      const hands = useHandStore.getState().smoothedHands;
-      const { leftHand, rightHand } = getScreenHands(hands);
+      const allHands = useHandStore.getState().smoothedHands;
+      if (owner !== null && allHands.some(h => identity(h) === owner && isVolumeHand(h))) {
+        clearRelease();
+        previous.clear();
+        release();
+      }
+      const hands = allHands.filter(h => !isVolumeHand(h));
+      const { leftHand, rightHand } = getScreenHands(allHands);
       const music = useMusicStore.getState();
       const { mode, hoveredRoot, hoveredQuality, hoveredBass, hoveredEffect } = music;
       if (mode !== previousMode) {
@@ -54,11 +65,13 @@ export function useAudioTrigger(audioStarted: boolean) {
         restoreFx();
         // Reset state before the synchronous music-store notification.
         owner = null;
+        ownerSource = null;
         lastKey = '';
+        lastSelection = '';
         looperService.releaseChord(false, true);
       }
-      if (mode === 'Song') {
-        const active = rightHand && (rightHand.isTriggerActive ?? (rightHand.isPinching || rightHand.isPointPressed));
+      if (mode === 'Song' && !(rightHand && isVolumeHand(rightHand))) {
+        const active = rightHand && !isVolumeHand(rightHand) && (rightHand.isTriggerActive ?? (rightHand.isPinching || rightHand.isPointPressed));
         if (active && hoveredEffect && hoveredEffect !== lastFx) {
           const store = useLooperStore.getState();
           const track = store.tracks.find(t => t.isArmed);
@@ -72,9 +85,15 @@ export function useAudioTrigger(audioStarted: boolean) {
           lastFx = hoveredEffect;
         } else if (!active) restoreFx();
       }
-      const playingHands = mode === 'Chord' ? hands : mode === 'Song'
-        ? [leftHand ?? (hands.length === 1 ? hands[0] : null)].filter((h): h is HandData => !!h)
-        : [leftHand ?? rightHand ?? hands[0]].filter((h): h is HandData => !!h);
+      const playingHands = mode === 'Chord' || mode === 'Song'
+        ? [leftHand ?? (allHands.length === 1 ? allHands[0] : null)].filter((h): h is HandData => !!h && !isVolumeHand(h))
+        : [leftHand ?? rightHand ?? allHands[0]].filter((h): h is HandData => !!h && !isVolumeHand(h));
+      if (owner !== null && !playingHands.some(h => identity(h) === owner) &&
+          hands.some(h => identity(h) === owner) && playingHands.length > 0) {
+        // A lone hand can play either wheel. Once a second hand establishes a
+        // note/quality pair, articulation belongs to the note hand immediately.
+        owner = identity(playingHands[0]);
+      }
       if (owner !== null && !playingHands.some(h => identity(h) === owner)) {
         // Treat loss of the owning hand as a dropout even while a second hand
         // remains visible. Do not steal or choke the voice during this guard.
@@ -101,18 +120,31 @@ export function useAudioTrigger(audioStarted: boolean) {
         for (const key of previous.keys()) if (!visible.has(key)) previous.delete(key);
       }
       const current = fresh ?? playingHands.find(h => identity(h) === owner);
-      if (current && down(current)) {
+      // A different detector cannot keep a released pinch sounding. The source
+      // which attacked the voice owns its release until the next explicit press.
+      const source = fresh ? current?.isPinching ? 'pinch' : current?.isPointPressed ? 'point' : 'key' : ownerSource;
+      const held = current && down(current) && (source !== 'pinch' || current.isPinching) &&
+        (source !== 'point' || !!current.isPointPressed);
+      if (current && held) {
         clearRelease();
         // Wheel gaps during a held gesture are navigation, not key-up.
         if (!hoveredRoot) {
           if (freshFrame && owner !== null) looperService.keepLiveNotesAlive();
           return;
         }
+        const selection = mode === 'Melody' ? `Melody:${hoveredRoot}`
+          : `${mode}:${hoveredRoot}:${hoveredQuality || 'maj'}:${hoveredBass || ''}`;
+        if (!fresh && owner !== null && lastKey && selection === lastSelection) {
+          if (freshFrame) looperService.keepLiveNotesAlive();
+          return;
+        }
         const notes = mode === 'Melody' ? [`${hoveredRoot}4`]
           : buildChord(hoveredRoot, hoveredQuality || 'maj', hoveredBass);
         const key = notes.join(',');
+        lastSelection = selection;
         if (fresh || key !== lastKey) {
           owner = identity(current);
+          ownerSource = source;
           lastKey = key;
           if (fresh) looperService.releaseChord(false, true);
           const velocity = current.isPinching ? current.pressVelocity ?? current.pinchStrength
