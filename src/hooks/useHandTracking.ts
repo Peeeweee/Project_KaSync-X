@@ -11,6 +11,8 @@ import { HandEmaFilter } from '../tracking/emaFilter';
 import { computeGestures } from '../tracking/gestureRecognizer';
 import { PointTapTracker } from '../tracking/pointTapTracker';
 import { PinchPressTracker } from '../tracking/pinchPressTracker';
+import { measureFingerCurls } from '../tracking/fingerArticulation';
+import { InferenceCadence } from '../tracking/inferenceCadence';
 import { TrackingMetrics, EMPTY_TRACKING_METRICS } from '../tracking/trackingMetrics';
 import { HandRoleTracker } from '../tracking/handRoleTracker';
 import type {
@@ -32,10 +34,11 @@ type VideoWithFrameCallback = HTMLVideoElement & {
   cancelVideoFrameCallback?: (handle: number) => void;
 };
 
-function sortDetections(landmarks: Landmark[][], handednesses: Category[][]) {
+function sortDetections(landmarks: Landmark[][], handednesses: Category[][], worldLandmarks: Landmark[][]) {
   return landmarks
     .map((handLandmarks, index) => ({
       landmarks: handLandmarks,
+      worldLandmarks: worldLandmarks[index],
       categories: handednesses[index] ?? [],
       handedness: handednesses[index]?.[0]?.categoryName ?? 'Unknown',
     }))
@@ -68,6 +71,7 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
   const requestStartedAtRef = useRef(0);
   const captureLatencyRef = useRef(0);
   const metricsRef = useRef(new TrackingMetrics());
+  const continueWorkerInferenceRef = useRef<(() => void) | null>(null);
   const inferenceFrameRef = useRef(new MainInferenceFrame());
   const frameTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,7 +81,6 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
       frameTimeoutRef.current = null;
     }
   };
-  const lastInferenceTimeRef = useRef(0);
   const frameTransferFailuresRef = useRef(0);
   const activateMainFallbackRef = useRef<(() => void) | null>(null);
   const settingsRef = useRef(useTrackingSettingsStore.getState());
@@ -86,11 +89,12 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
     landmarks: Landmark[][],
     handednesses: Category[][],
     inferenceMs: number,
+    worldLandmarks: Landmark[][] = [],
   ) => {
     const video = videoRef.current;
     if (!video || isBenchmarkActive()) return;
 
-    const detections = sortDetections(landmarks, handednesses);
+    const detections = sortDetections(landmarks, handednesses, worldLandmarks);
     const rawLandmarks = detections.map(detection => detection.landmarks);
     const smoothedLandmarks = emaFilterRef.current.filter(
       rawLandmarks, detections.map(detection => detection.handedness),
@@ -132,10 +136,11 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
         pressTracker = new PinchPressTracker();
         pinchPressesRef.current.set(identityKey, pressTracker);
       }
-      const press = pressTracker.update({ ...rawGesture, isPinching: gestures.isPinching });
+      const fingerCurls = measureFingerCurls(rawLandmarks[index], rawGesture.imageYScale, detections[index].worldLandmarks);
+      const press = pressTracker.update({ ...rawGesture, isPinching: gestures.isPinching, fingerCurls });
       gestures.isTriggerActive = press.isKeyDown || gestures.isPointPressed;
       gestures.triggerVelocity = gestures.isPointPressed ? rawGesture.pointVelocity : gestures.pinchStrength;
-      return { landmarks: handLandmarks, handedness, ...gestures, ...press,
+      return { landmarks: handLandmarks, handedness, ...gestures, ...press, fingerCurls,
         isKeyDown: press.isKeyDown || gestures.isPointPressed };
     });
 
@@ -165,6 +170,8 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
         pressId: roleAssignedHands[index]?.pressId,
         pressVelocity: roleAssignedHands[index]?.pressVelocity,
         articulationReason: roleAssignedHands[index]?.articulationReason,
+        articulatingFingers: roleAssignedHands[index]?.articulatingFingers,
+        fingerCurls: roleAssignedHands[index]?.fingerCurls,
         screenRole: roleAssignedHands[index]?.screenRole,
       };
     });
@@ -177,7 +184,7 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
     const metrics = metricsRef.current.record(
       completedAt, completedAt - requestStartedAtRef.current, captureLatencyRef.current,
     );
-    useTrackingSettingsStore.getState().setRuntime({ inferenceLatencyMs: inferenceMs, ...metrics });
+    if (metrics) useTrackingSettingsStore.getState().setRuntime({ inferenceLatencyMs: inferenceMs, ...metrics });
   };
 
   useEffect(() => {
@@ -260,7 +267,6 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
       previousPointsRef.current.clear();
       pinchPressesRef.current.clear();
       inFlightRequestRef.current = null;
-      lastInferenceTimeRef.current = 0;
       const handStore = useHandStore.getState();
       handStore.setHands([], []);
       handStore.setIsTracking(false);
@@ -393,7 +399,8 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
           consecutiveProcessFailures = 0;
           frameTransferFailuresRef.current = 0;
           inFlightRequestRef.current = null;
-          processResults(message.landmarks, message.handednesses, message.inferenceMs);
+          processResults(message.landmarks, message.handednesses, message.inferenceMs, message.worldLandmarks);
+          continueWorkerInferenceRef.current?.();
         } else if (message.type === 'PROCESS_ERROR') {
           if (message.requestId === inFlightRequestRef.current) {
             clearFrameTimeout();
@@ -450,25 +457,29 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
     let frameHandle = 0;
     let usesVideoFrames = false;
     let lastMediaTime = -1;
+    let pendingFrame: { mediaTime: number } | null = null;
+    const cadence = new InferenceCadence();
     metricsRef.current.reset();
     useTrackingSettingsStore.getState().setRuntime(EMPTY_TRACKING_METRICS);
 
     const runInference = (timestamp: number, mediaTime: number) => {
-      if (!active || isBenchmarkActive() || inFlightRequestRef.current !== null) return;
+      if (!active || isBenchmarkActive()) return;
+      if (inFlightRequestRef.current !== null) {
+        if (backendRef.current === 'worker') pendingFrame = { mediaTime };
+        return;
+      }
       const settings = settingsRef.current;
       const targetFps = getTargetInferenceFps(settings.quality, settings.isLowPerformance);
-      const intervalMs = 1000 / targetFps;
-      // Allow 14% timing tolerance for rVFC / rAF clock jitter to avoid dropping frames
-      const jitterTolerance = Math.min(6, intervalMs * 0.14);
-      if (timestamp - lastInferenceTimeRef.current < intervalMs - jitterTolerance) return;
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0 || video.paused) return;
 
       // rAF may run faster than the camera. Never infer twice on the same decoded frame.
       if (mediaTime === lastMediaTime) return;
+      if (!cadence.due(timestamp, targetFps)) return;
       lastMediaTime = mediaTime;
+      pendingFrame = null;
       requestStartedAtRef.current = performance.now();
       captureLatencyRef.current = 0;
-      lastInferenceTimeRef.current = timestamp;
+      cadence.started(timestamp);
       const requestId = ++requestSequenceRef.current;
       inFlightRequestRef.current = requestId;
       if (useTrackingSettingsStore.getState().targetFps !== targetFps) {
@@ -536,7 +547,7 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
           }
           const startedAt = performance.now();
           const results = landmarkerRef.current.detectForVideo(input, timestamp);
-          processResults(results.landmarks, results.handednesses, performance.now() - startedAt);
+          processResults(results.landmarks, results.handednesses, performance.now() - startedAt, results.worldLandmarks);
         } catch (cause) {
           console.warn('Main-thread hand inference failed:', cause);
         } finally {
@@ -546,6 +557,15 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
           }
         }
       }
+    };
+
+    continueWorkerInferenceRef.current = () => {
+      if (!active || backendRef.current !== 'worker' || !pendingFrame) return;
+      const latest = pendingFrame;
+      pendingFrame = null;
+      // The camera already decoded this frame while inference was busy. Start
+      // it now instead of waiting another entire camera interval for a callback.
+      runInference(performance.now(), latest.mediaTime);
     };
 
     const scheduleNext = () => {
@@ -567,13 +587,14 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
     scheduleNext();
     return () => {
       active = false;
+      continueWorkerInferenceRef.current = null;
+      pendingFrame = null;
       clearFrameTimeout();
       metricsRef.current.reset();
       useTrackingSettingsStore.getState().setRuntime(EMPTY_TRACKING_METRICS);
       if (usesVideoFrames) video.cancelVideoFrameCallback?.(frameHandle);
       else cancelAnimationFrame(frameHandle);
       inFlightRequestRef.current = null;
-      lastInferenceTimeRef.current = 0;
     };
   }, [cameraReady, isReady, videoRef]);
 
