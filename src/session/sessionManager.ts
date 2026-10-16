@@ -280,6 +280,7 @@ export function captureSession(name = useSessionStore.getState().projectName): K
       autoAdvanceEnabled: songMode.autoAdvanceEnabled,
     },
     tracking: {
+      trackingEngine: tracking.trackingEngine,
       quality: tracking.quality,
       smoothingAlpha: tracking.smoothingAlpha,
       pinchThreshold: tracking.pinchThreshold,
@@ -369,6 +370,7 @@ export function parseSessionText(raw: string): KasyncSessionDocument {
       autoAdvanceEnabled: bool(songMode.autoAdvanceEnabled, true),
     },
     tracking: {
+      trackingEngine: tracking.trackingEngine === 'worker' ? 'worker' : 'compatible',
       quality,
       smoothingAlpha: number(tracking.smoothingAlpha, 0.5, 0.2, 0.85),
       pinchThreshold,
@@ -494,7 +496,8 @@ export function startSessionPersistence(): () => void {
         state.quality !== previous.quality || state.smoothingAlpha !== previous.smoothingAlpha ||
         state.pinchThreshold !== previous.pinchThreshold ||
         state.pinchReleaseThreshold !== previous.pinchReleaseThreshold ||
-        state.mirrorCamera !== previous.mirrorCamera || state.showHandOverlay !== previous.showHandOverlay
+        state.mirrorCamera !== previous.mirrorCamera || state.showHandOverlay !== previous.showHandOverlay ||
+        state.trackingEngine !== previous.trackingEngine
       ) scheduleAutosave();
     }),
     useMidiLearnStore.subscribe((state, previous) => {
