@@ -1,4 +1,6 @@
 import * as Tone from 'tone';
+import { effectDialSettings, useEffectDialStore } from '../store/effectDial';
+import { queueReverbDecay } from './effectDial';
 import type { InstrumentType, EffectsState } from '../store/musicState';
 
 // ─────────────────────────────────────────────────────────────
@@ -19,6 +21,8 @@ export class TrackAudioLayer {
   private delay: Tone.FeedbackDelay;
   private reverb: Tone.Reverb | null = null; // lazy — IR generation is deferred to first use
   private sustainEnabled = false;
+  private currentEffects: EffectsState | null = null;
+  private unsubscribeEffectDial: () => void;
 
   constructor(id: number) {
     this.id = id;
@@ -39,12 +43,16 @@ export class TrackAudioLayer {
     this.chorus.chain(this.bitcrusher, this.delay, this.volumeNode);
 
     this.synth = this.buildSynth('Subtractive');
+    this.unsubscribeEffectDial = useEffectDialStore.subscribe(() => {
+      const fx = this.currentEffects;
+      if (fx && (fx.reverb || fx.delay || fx.chorus || fx.bitcrusher)) this.setEffects(fx);
+    });
   }
 
   /** Lazily create the reverb on first use — avoids blocking IR generation at construction time. */
   private getOrCreateReverb(): Tone.Reverb {
     if (!this.reverb) {
-      this.reverb = new Tone.Reverb({ decay: 2.0, preDelay: 0.05 });
+      this.reverb = new Tone.Reverb({ decay: effectDialSettings().decay, preDelay: 0.05 });
       this.reverb.wet.value = 0;
       // Re-wire chain to include reverb
       this.delay.disconnect();
@@ -105,16 +113,21 @@ export class TrackAudioLayer {
   }
 
   public setEffects(state: EffectsState) {
+    this.currentEffects = state;
     const wasSustaining = this.sustainEnabled;
     this.sustainEnabled = state.sustain;
     // Smoothly ramp wet values to avoid clicking
     const rampTime = 0.1;
-    this.chorus.wet.rampTo(state.chorus ? 0.6 : 0, rampTime);
-    this.bitcrusher.wet.rampTo(state.bitcrusher ? 0.8 : 0, rampTime);
-    this.delay.wet.rampTo(state.delay ? 0.5 : 0, rampTime);
+    const dial = effectDialSettings();
+    this.chorus.wet.rampTo(state.chorus ? Math.min(1, 0.6 * dial.amount) : 0, rampTime);
+    this.bitcrusher.wet.rampTo(state.bitcrusher ? Math.min(1, 0.8 * dial.amount) : 0, rampTime);
+    this.delay.wet.rampTo(state.delay ? Math.min(1, 0.5 * dial.amount) : 0, rampTime);
+    this.delay.feedback.rampTo(dial.feedback, rampTime);
     // Reverb is lazy — only initialize it when actually enabled
     if (state.reverb) {
-      this.getOrCreateReverb().wet.rampTo(0.7, rampTime);
+      const reverb = this.getOrCreateReverb();
+      reverb.wet.rampTo(Math.min(1, 0.7 * dial.amount), rampTime);
+      queueReverbDecay(reverb, dial.decay);
     } else if (this.reverb) {
       this.reverb.wet.rampTo(0, rampTime);
     }
@@ -156,6 +169,7 @@ export class TrackAudioLayer {
   }
 
   public dispose() {
+    this.unsubscribeEffectDial();
     this.releaseAll();
     this.synth.dispose();
     this.chorus.dispose();
