@@ -3,11 +3,7 @@ import { useHandStore } from '../store/handState';
 import { useMusicStore } from '../store/musicState';
 
 export function TutorialOverlay() {
-  const [step, setStep] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
-  
-  const { smoothedHands } = useHandStore();
-  const { hoveredRoot, hoveredBass } = useMusicStore();
 
   useEffect(() => {
     const hasCompleted = localStorage.getItem('kasync_tutorial_completed');
@@ -16,30 +12,35 @@ export function TutorialOverlay() {
     }
   }, []);
 
+  if (!isVisible) return null;
+
+  return <TutorialContent onClose={() => setIsVisible(false)} />;
+}
+
+function TutorialContent({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState(0);
+  const isPinching = useHandStore((state) => state.smoothedHands.some((h) => h.isPinching));
+  const hoveredRoot = useMusicStore((state) => state.hoveredRoot);
+  const hoveredBass = useMusicStore((state) => state.hoveredBass);
+
   const skipTutorial = () => {
     localStorage.setItem('kasync_tutorial_completed', 'true');
-    setIsVisible(false);
+    onClose();
   };
 
   useEffect(() => {
-    if (!isVisible) return;
-    
-    const isPinching = smoothedHands.some(h => h.isPinching);
-
     if (step === 1 && isPinching) {
       setStep(2);
     }
-    
+
     if (step === 2 && isPinching && hoveredRoot) {
       setStep(3);
     }
-    
+
     if (step === 3 && isPinching && hoveredBass && hoveredBass !== hoveredRoot) {
       setStep(4);
     }
-  }, [smoothedHands, hoveredRoot, hoveredBass, step, isVisible]);
-
-  if (!isVisible) return null;
+  }, [isPinching, hoveredRoot, hoveredBass, step]);
 
   const isInteractiveStep = step > 0 && step < 4;
 
