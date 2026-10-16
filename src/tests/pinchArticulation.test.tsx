@@ -32,7 +32,83 @@ function pose(gap: number, scale = 1): Landmark[] {
 afterEach(() => { cleanup(); useHandStore.getState().setHands([], []); vi.clearAllMocks(); });
 
 describe('landmark-to-audio pinch articulation', () => {
-  it.each(['Chord', 'Song', 'Melody'] as const)('re-strikes and stops seven free-finger presses in %s', mode => {
+  it.each(['Chord', 'Song', 'Melody'] as const)('returns to sounding the same pitch after each up/down/up cycle in %s', mode => {
+    useMusicStore.getState().setMusicState({ mode, hoveredRoot:'C#', hoveredQuality:'maj',
+      hoveredBass:'C#', hoveredEffect:null, playingNotes:[] });
+    const video = document.createElement('video');
+    Object.defineProperties(video,{videoWidth:{value:1280},videoHeight:{value:720}});
+    renderHook(() => useAudioTrigger(true));
+    const tracker = new PinchPressTracker();
+    const publish = (bend: number) => {
+      const {image,world} = fingerPinchHand([bend,.4,.4]);
+      const gestures = computeGestures(image,video,{previousPinching:true});
+      const key = tracker.update({...gestures,fingerCurls:measureFingerCurls(image,720/1280,world)});
+      const hand = {...gestures,...key,landmarks:image,handedness:'Left',screenRole:'left' as const};
+      act(() => useHandStore.getState().setHands([hand],[hand]));
+    };
+    const attack = mode === 'Melody' ? looperService.triggerNote : looperService.triggerChord;
+    publish(.4);
+    for (let cycle=0;cycle<7;cycle++) {
+      const before = vi.mocked(attack).mock.calls.length;
+      publish(1.4);
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+      for (let hold=0;hold<12;hold++) publish(1.4);
+      expect(vi.mocked(attack).mock.calls.length).toBe(before);
+      publish(.4);
+      expect(useMusicStore.getState().playingNotes).toContain('C#4');
+      expect(vi.mocked(attack).mock.calls.length).toBeGreaterThan(before);
+      const after = vi.mocked(attack).mock.calls.length;
+      publish(.4);
+      expect(vi.mocked(attack).mock.calls.length).toBe(after);
+    }
+  });
+  it.each(['Chord', 'Song', 'Melody'] as const)('repeats the same pitch after partial finger lifts in %s', mode => {
+    useMusicStore.getState().setMusicState({ mode, hoveredRoot: 'C', hoveredQuality: 'maj',
+      hoveredBass: null, hoveredEffect: null, playingNotes: [] });
+    const video = document.createElement('video');
+    Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+    renderHook(() => useAudioTrigger(true));
+    const press = new PinchPressTracker();
+    const publish = (bend: number, depth = .6, x = 0) => {
+      const { image, world } = fingerPinchHand([bend,.4,.4],depth,x);
+      const gestures = computeGestures(image, video, { previousPinching: true });
+      expect(gestures.isPinching).toBe(true);
+      const key = press.update({ ...gestures, fingerCurls: measureFingerCurls(image,720/1280,world) });
+      const hand = { ...gestures, ...key, landmarks: image, handedness: 'Left', screenRole: 'left' as const };
+      act(() => useHandStore.getState().setHands([hand], [hand]));
+    };
+    const attack = mode === 'Melody' ? looperService.triggerNote : looperService.triggerChord;
+    publish(.4);
+    for (let hit=2;hit<=8;hit++) {
+      publish(1.4);
+      expect(attack).toHaveBeenCalledTimes(hit-1);
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+      // Holding down stays silent, including whole-hand movement.
+      publish(1.4,.55,.08);
+      expect(attack).toHaveBeenCalledTimes(hit-1);
+      // A single exaggerated bend estimate must not poison the held reference
+      // and turn its return into a key-up event.
+      publish(2.2,.55,.08);
+      publish(1.4,.55,.08);
+      expect(attack).toHaveBeenCalledTimes(hit-1);
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+      publish(1.1);
+      expect(attack).toHaveBeenCalledTimes(hit);
+      expect(useMusicStore.getState().playingNotes).toContain('C4');
+      publish(1.1);
+      expect(attack).toHaveBeenCalledTimes(hit);
+    }
+    act(() => useMusicStore.getState().setMusicState({ hoveredRoot: 'D' }));
+    expect(useMusicStore.getState().playingNotes).toContain('D4');
+    act(() => useMusicStore.getState().setMusicState({ hoveredRoot: 'C' }));
+    expect(useMusicStore.getState().playingNotes).toContain('C4');
+    publish(1.4);
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+    publish(1.1);
+    expect(attack).toHaveBeenCalledTimes(11);
+    expect(useMusicStore.getState().playingNotes).toContain('C4');
+  });
+  it.each(['Chord', 'Song', 'Melody'] as const)('cuts and resumes seven free-finger cycles in %s', mode => {
     useMusicStore.getState().setMusicState({ mode, hoveredRoot: 'C', hoveredQuality: 'maj',
       hoveredBass: null, hoveredEffect: null, playingNotes: [] });
     const video = document.createElement('video');
@@ -59,13 +135,14 @@ describe('landmark-to-audio pinch articulation', () => {
     for (let i = 2; i <= 8; i++) {
       const bends = [0,0,0]; bends[(i-2)%3] = 1;
       publish(bends);
-      expect(attack).toHaveBeenCalledTimes(i);
-      expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
-      publish(bends,.55,.08,.04);
-      expect(attack).toHaveBeenCalledTimes(i);
-      expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
-      publish();
+      expect(attack).toHaveBeenCalledTimes(i-1);
       expect(useMusicStore.getState().playingNotes).toEqual([]);
+      publish(bends,.55,.08,.04);
+      expect(attack).toHaveBeenCalledTimes(i-1);
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+      publish();
+      expect(attack).toHaveBeenCalledTimes(i);
+      expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
     }
   });
   it.each(['Chord', 'Song', 'Melody'] as const)('plays and releases seven small openings, retaining navigation holds in %s', mode => {
