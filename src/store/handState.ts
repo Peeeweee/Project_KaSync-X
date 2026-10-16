@@ -13,7 +13,9 @@ export interface HandData {
   isKeyDown?: boolean;
   pressId?: number;
   pressVelocity?: number;
-  articulationReason?: 'open' | 'pinch-start' | 'navigation' | 'hold' | 'depth-press' | 'depth-release';
+  articulationReason?: 'open' | 'pinch-start' | 'navigation' | 'hold' | 'depth-press' | 'depth-release' | 'press' | 'lift' | 'motion-unavailable' | 'finger-press' | 'finger-lift';
+  articulatingFingers?: string[];
+  fingerCurls?: [number | null, number | null, number | null];
   pointDepth?: number;
   pointVelocity?: number;
   isTriggerActive?: boolean;
@@ -21,6 +23,7 @@ export interface HandData {
   palmPosition: { x: number; y: number };
   indexTipPosition: { x: number; y: number }; // index fingertip (landmark 8), x already mirrored
   handRotation: number;
+  imageYScale?: number;
   screenRole?: ScreenRole;
 }
 
