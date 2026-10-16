@@ -50,61 +50,61 @@ function SongHUD({
   sections,
   activeSectionIndex,
   onSelect,
+  songName,
 }: {
   sections: { name: string; colorTag?: string }[];
   activeSectionIndex: number;
   onSelect: (idx: number) => void;
+  songName: string;
 }) {
+  const activeButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const button = activeButtonRef.current;
+    const ribbon = button?.parentElement;
+    if (!button || !ribbon) return;
+    // Scroll only the ribbon, keeping the stage and camera stationary.
+    const left = button.offsetLeft - ribbon.offsetLeft;
+    if (left < ribbon.scrollLeft) ribbon.scrollLeft = left;
+    else if (left + button.offsetWidth > ribbon.scrollLeft + ribbon.clientWidth) {
+      ribbon.scrollLeft = left + button.offsetWidth - ribbon.clientWidth;
+    }
+  }, [activeSectionIndex, sections]);
+
   return (
-    <div className="kasync-song-hud absolute left-1/2 -translate-x-1/2 z-40 flex flex-col items-center">
-      {/* Current song section info */}
-      <div className="mb-6 flex flex-col items-center">
-        <span className="text-[10px] tracking-[0.3em] font-mono text-[#F78FB3] uppercase opacity-90 drop-shadow-[0_0_8px_rgba(247,143,179,0.5)]">
-          ♪ SONG MODE — {useSongStore.getState().songs.find(s => s.id === useSongStore.getState().activeSongId)?.name ?? 'NEW SONG'}
-        </span>
+    <header role="region" aria-label="Song sections navigation"
+      className="kasync-song-hud absolute left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+      <div className="kasync-song-console">
+        <div className="kasync-song-identity">
+          <span className="kasync-song-badge"><span aria-hidden="true" />Song mode</span>
+          <span className="kasync-song-title" title={songName}>{songName}</span>
+        </div>
+        <div className="kasync-song-actions">
+          <span className="kasync-song-shortcuts" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd> Sections</span>
+          <button type="button" aria-label="Open song library and editor"
+            className="kasync-song-edit"
+            onClick={e => { e.stopPropagation(); useSongStore.getState().toggleSongPanel(); }}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m16 3 5 5L9 20l-6 1 1-6L16 3Z" /><path d="m14 5 5 5" />
+            </svg>
+            Edit song
+          </button>
+        </div>
       </div>
-
-      <div className="flex items-center gap-3 bg-[#030308]/80 px-4 py-2 rounded-full border border-white/5 backdrop-blur-md">
-        {sections.map((sec, i) => {
-          const isActive = i === activeSectionIndex;
-          const color = sec.colorTag ?? '#9D4EDD';
-          return (
-            <button
-              key={`${i}-${sec.name}`}
-              onClick={(e) => { e.stopPropagation(); onSelect(i); }}
-              className={`
-                relative px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all
-                ${isActive ? 'text-white' : 'text-white/40 hover:text-white/70'}
-              `}
-              style={{
-                border: isActive ? `1px solid ${color}` : '1px solid transparent',
-                boxShadow: isActive ? `0 0 15px ${color}40, inset 0 0 8px ${color}20` : 'none'
-              }}
-            >
+      {sections.length > 0 && (
+        <nav aria-label="Section selector" className="kasync-song-sections">
+          {sections.map((sec, i) => (
+            <button key={`${i}-${sec.name}`} type="button"
+              ref={i === activeSectionIndex ? activeButtonRef : undefined}
+              aria-current={i === activeSectionIndex ? 'step' : undefined}
+              className="kasync-song-section"
+              style={{ '--section-color': sec.colorTag ?? '#9D4EDD' } as React.CSSProperties}
+              onClick={e => { e.stopPropagation(); onSelect(i); }}>
               {sec.name}
-              {isActive && (
-                <div
-                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
-                />
-              )}
             </button>
-          );
-        })}
-      </div>
-
-      <div className="flex items-center justify-between mt-2 gap-4">
-        <span className="text-[8px] tracking-widest text-white font-mono opacity-20">
-          ← → ARROW KEYS
-        </span>
-        <button
-          className="pointer-events-auto text-[8px] tracking-[0.25em] uppercase px-2 py-1 rounded border border-white/10 text-[#6E7C9C] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)]/40 transition-all"
-          onClick={e => { e.stopPropagation(); useSongStore.getState().toggleSongPanel(); }}
-        >
-          ✏️ Edit Song
-        </button>
-      </div>
-    </div>
+          ))}
+        </nav>
+      )}
+    </header>
   );
 }
 
@@ -122,6 +122,24 @@ function ChordWheel({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const prevHoveredRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const layoutCache = useRef({ width: 0, height: 0, left: 0, top: 0 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      layoutCache.current = { width: rect.width, height: rect.height, left: rect.left, top: rect.top };
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeSection || activeSection.chords.length === 0) {
@@ -134,7 +152,8 @@ function ChordWheel({
 
     const unsub = useHandStore.subscribe((state) => {
       const hands = state.smoothedHands;
-      const { leftHand: hand } = getScreenHands(hands);
+      const { leftHand } = getScreenHands(hands);
+      const hand = leftHand ?? (hands.length === 1 ? hands[0] : undefined);
       if (!state.isTracking || !hand) {
         setHoveredIndex(null);
         prevHoveredRef.current = null;
@@ -145,8 +164,13 @@ function ChordWheel({
         return;
       }
 
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect || rect.width === 0) return;
+      let rect = layoutCache.current;
+      if (rect.width === 0 && containerRef.current) {
+        const r = containerRef.current.getBoundingClientRect();
+        layoutCache.current = { width: r.width, height: r.height, left: r.left, top: r.top };
+        rect = layoutCache.current;
+      }
+      if (rect.width === 0) return;
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       const handX = hand.indexTipPosition.x * window.innerWidth;
@@ -302,6 +326,24 @@ function FxWheel() {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const prevHoveredRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const layoutCache = useRef({ width: 0, height: 0, left: 0, top: 0 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      layoutCache.current = { width: rect.width, height: rect.height, left: rect.left, top: rect.top };
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, []);
 
   useEffect(() => {
     const unsub = useHandStore.subscribe((state) => {
@@ -315,7 +357,12 @@ function FxWheel() {
         return;
       }
 
-      const rect = containerRef.current?.getBoundingClientRect();
+      let rect = layoutCache.current;
+      if (rect.width === 0 && containerRef.current) {
+        const r = containerRef.current.getBoundingClientRect();
+        layoutCache.current = { width: r.width, height: r.height, left: r.left, top: r.top };
+        rect = layoutCache.current;
+      }
       if (!rect || rect.width === 0) return;
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
@@ -487,6 +534,7 @@ export function SongPalette() {
         }))}
         activeSectionIndex={activeSectionIndex}
         onSelect={setActiveSection}
+        songName={activeSong?.name ?? 'NEW SONG'}
       />
       <ChordWheel activeSection={effectiveSection} sectionKey={sectionKey} sectionColor={sectionColor} />
       <FxWheel />
