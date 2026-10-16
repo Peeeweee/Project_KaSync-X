@@ -8,6 +8,7 @@ import { PinchPressTracker } from '../tracking/pinchPressTracker';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { useVolumeGestureStore } from '../store/volumeGesture';
 import { useLooperStore } from '../store/looperState';
+import { useLiveNoteReleaseStore } from '../diagnostics/liveNoteRelease';
 
 vi.mock('../looper/recorder', () => ({ looperService: {
   triggerChord: vi.fn(), triggerNote: vi.fn(), releaseChord: vi.fn(), releaseNote: vi.fn(),
@@ -25,6 +26,7 @@ const publish = (...hands: HandData[]) => act(() => useHandStore.getState().setH
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  useLiveNoteReleaseStore.setState({lastRelease:null});
   useVolumeGestureStore.setState({ owner: null, effectOwner: null });
   useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: null });
   useHandStore.getState().setHands([], []);
@@ -34,6 +36,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('performed piano articulation', () => {
+  it.each(['Chord','Song','Melody'] as const)('resumes the latched pitch through a wheel gap on return up in %s', mode => {
+    useMusicStore.getState().setMusicState({mode,hoveredRoot:'C#',hoveredQuality:'min',hoveredBass:'G#'});
+    renderHook(() => useAudioTrigger(true));
+    const attack = mode === 'Melody' ? looperService.triggerNote : looperService.triggerChord;
+    const note = {...hand(false,true),isKeyDown:true,pressId:1};
+    publish(note);
+    const first = vi.mocked(attack).mock.calls[0][0];
+    publish({...note,isKeyDown:false,articulationReason:'finger-press'});
+    act(() => useMusicStore.getState().setMusicState({hoveredRoot:null,hoveredQuality:null,hoveredBass:null}));
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+    const returned = {...note,pressId:2,articulationReason:'finger-lift' as const};
+    publish(returned);
+    expect(attack).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(attack).mock.lastCall?.[0]).toEqual(first);
+    publish(returned);
+    expect(attack).toHaveBeenCalledTimes(2);
+    publish({...returned,isPinching:false,isKeyDown:false});
+    publish({...note,pressId:3,articulationReason:'pinch-start'});
+    expect(attack).toHaveBeenCalledTimes(2);
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+  });
+  it('retains the stop cause after the stopped hand remains visible and distinguishes pinch opening from loss', () => {
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false,true), isKeyDown:true, pressId:1 };
+    publish(note);
+    publish({ ...note, isKeyDown:false, articulationReason:'finger-press' });
+    expect(useLiveNoteReleaseStore.getState().lastRelease).toMatchObject({reason:'finger-press',pinching:true});
+    const stopped = useLiveNoteReleaseStore.getState().lastRelease;
+    publish({ ...note, isKeyDown:false, articulationReason:'hold' });
+    expect(useLiveNoteReleaseStore.getState().lastRelease).toBe(stopped);
+    publish({ ...note, pressId:2 });
+    publish({ ...note, pressId:2, isKeyDown:false, isPinching:false });
+    expect(useLiveNoteReleaseStore.getState().lastRelease).toMatchObject({reason:'pinch-open',pinching:false});
+    publish({ ...note, pressId:3 });
+    publish();
+    act(() => vi.advanceTimersByTime(90));
+    expect(useLiveNoteReleaseStore.getState().lastRelease).toMatchObject({reason:'hand-lost',hand:null});
+  });
   it('preserves the Song effect selection while the right palm shapes it', () => {
     const track = useLooperStore.getState().tracks.find(t => t.isArmed)!;
     const effects = track.effects;
@@ -205,6 +245,20 @@ describe('performed piano articulation', () => {
     publish({ ...hand(false, true), isKeyDown: true, pressId: 2 });
     publish({ ...hand(false, true), isKeyDown: true, pressId: 2 });
     expect(looperService.triggerChord).toHaveBeenCalledTimes(2);
+  });
+  it.each(['Chord', 'Song', 'Melody'] as const)('honors an upward resume after the tracker counter resets in %s', mode => {
+    useMusicStore.getState().setMusicState({ mode });
+    renderHook(() => useAudioTrigger(true));
+    const attack = mode === 'Melody' ? looperService.triggerNote : looperService.triggerChord;
+    publish({ ...hand(false,true), isKeyDown:true, pressId:7 });
+    // Reacquisition can restart a detector's local counter. An actual finger
+    // return up is still a new event even if the preceding cut wasn't observed.
+    const strike = { ...hand(false,true), isKeyDown:true, pressId:2, articulationReason:'finger-lift' as const };
+    publish(strike);
+    expect(attack).toHaveBeenCalledTimes(2);
+    publish(strike);
+    act(() => useMusicStore.getState().setMusicState({ activeNote:'C' }));
+    expect(attack).toHaveBeenCalledTimes(2);
   });
 
   it('does not let another held pinch mask the playing hand release', () => {
