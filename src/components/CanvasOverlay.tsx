@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useHandStore } from '../store/handState';
+import { useHandStore, type HandData } from '../store/handState';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { landmarkToScreen } from '../tracking/coordUtils';
 
@@ -47,6 +47,8 @@ export function CanvasOverlay() {
 
     let animationId: number;
     let frameCount = 0;
+    let lastHands: HandData[] | null = null;
+    let lastDrawKey = '';
     // Cache the video element once — avoids document.querySelector('video') at 60 fps
     let cachedVideoEl: HTMLVideoElement | null = null;
 
@@ -63,22 +65,32 @@ export function CanvasOverlay() {
       if (document.body.classList.contains('low-perf-mode') && frameCount % 3 !== 0) return;
 
       const { clientWidth, clientHeight } = canvas.parentElement || document.body;
-      if (canvas.width !== clientWidth || canvas.height !== clientHeight) {
+      const resized = canvas.width !== clientWidth || canvas.height !== clientHeight;
+      if (resized) {
         canvas.width = clientWidth;
         canvas.height = clientHeight;
         // Invalidate video cache on resize (dimensions may have changed)
         cachedVideoEl = null;
       }
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       const { smoothedHands, isTracking } = useHandStore.getState();
       const { mirrorCamera, showHandOverlay } = useTrackingSettingsStore.getState();
-      if (!showHandOverlay) return;
       const videoEl = getVideo();
+      const drawKey = `${isTracking}/${mirrorCamera}/${showHandOverlay}/${videoEl?.videoWidth}/${videoEl?.videoHeight}`;
+      // There is no time-based animation in this canvas. Redrawing the same
+      // detection at display FPS only competes with inference for CPU/GPU time.
+      if (!resized && lastHands === smoothedHands && lastDrawKey === drawKey) return;
+      lastHands = smoothedHands;
+      lastDrawKey = drawKey;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!showHandOverlay) return;
 
       if (isTracking && smoothedHands) {
         smoothedHands.forEach((hand) => {
+          // Reuse projected coordinates across skeleton connections and fingertip effects.
+          const screenLandmarks = hand.landmarks.map(point => videoEl
+            ? landmarkToScreen(point.x, point.y, videoEl, mirrorCamera)
+            : { x: mirrorCamera ? 1 - point.x : point.x, y: point.y });
           // ── Skeleton ──────────────────────────────────────────────
           ctx.shadowBlur = 0;
           ctx.strokeStyle = 'rgba(58, 63, 75, 0.7)';
@@ -93,54 +105,74 @@ export function CanvasOverlay() {
             const end = hand.landmarks[endIdx];
             if (!start || !end) return;
 
-            const sc = videoEl
-              ? landmarkToScreen(start.x, start.y, videoEl, mirrorCamera)
-              : { x: mirrorCamera ? 1 - start.x : start.x, y: start.y };
-            const ec = videoEl
-              ? landmarkToScreen(end.x, end.y, videoEl, mirrorCamera)
-              : { x: mirrorCamera ? 1 - end.x : end.x, y: end.y };
+            const sc = screenLandmarks[startIdx];
+            const ec = screenLandmarks[endIdx];
 
             ctx.moveTo(sc.x * canvas.width, sc.y * canvas.height);
             ctx.lineTo(ec.x * canvas.width, ec.y * canvas.height);
           });
           ctx.stroke();
 
-          // ── Fingertip dots ─────────────────────────────────────────
+          // ── Fingertip dots & Point-In Shockwave ───────────────────
           FINGERTIPS.forEach(({ idx, color, radius }) => {
             const tip = hand.landmarks[idx];
             if (!tip) return;
-            const sc = videoEl
-              ? landmarkToScreen(tip.x, tip.y, videoEl, mirrorCamera)
-              : { x: mirrorCamera ? 1 - tip.x : tip.x, y: tip.y };
+            const sc = screenLandmarks[idx];
             const tx = sc.x * canvas.width;
             const ty = sc.y * canvas.height;
 
+            const isIndexActive = idx === 8 && (hand.isPointPressed || hand.isPinching);
+            const dotRadius = isIndexActive ? radius * 1.35 : radius;
+            const dotColor = idx === 8 && hand.isPointPressed ? '#00f0ff' : color;
+
+            // Holographic depth reticle and shockwave ring on point-in
+            if (idx === 8) {
+              const depth = hand.pointDepth ?? 0;
+              if (hand.isPointPressed) {
+                // Active strike shockwave
+                ctx.strokeStyle = '#00f0ff';
+                ctx.lineWidth = 2.5;
+                ctx.globalAlpha = 0.95;
+                ctx.beginPath();
+                ctx.arc(tx, ty, radius * 2.4, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(157, 78, 221, 0.7)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(tx, ty, radius * 3.6, 0, Math.PI * 2);
+                ctx.stroke();
+              } else if (depth > 0.1) {
+                // Pre-strike proximity indicator (shows forward motion approaching threshold)
+                ctx.strokeStyle = '#00f0ff';
+                ctx.lineWidth = 1.2;
+                ctx.globalAlpha = Math.min(0.7, depth * 0.8);
+                ctx.beginPath();
+                ctx.arc(tx, ty, radius * (1.2 + depth * 0.8), 0, Math.PI * 2);
+                ctx.stroke();
+              }
+            }
+
             // Colored outer dot
-            ctx.fillStyle = color;
+            ctx.fillStyle = dotColor;
             ctx.globalAlpha = 1.0;
             ctx.beginPath();
-            ctx.arc(tx, ty, radius, 0, Math.PI * 2);
+            ctx.arc(tx, ty, dotRadius, 0, Math.PI * 2);
             ctx.fill();
 
             // White core
             ctx.fillStyle = 'white';
-            ctx.globalAlpha = 0.9;
+            ctx.globalAlpha = 0.95;
             ctx.beginPath();
-            ctx.arc(tx, ty, radius * 0.4, 0, Math.PI * 2);
+            ctx.arc(tx, ty, dotRadius * 0.45, 0, Math.PI * 2);
             ctx.fill();
             ctx.globalAlpha = 1.0;
           });
 
           // ── Pinch arc (thumb ↔ index) ──────────────────────────────
           if (hand.landmarks[4] && hand.landmarks[8]) {
-            const thumbTip = hand.landmarks[4];
-            const indexTip = hand.landmarks[8];
-            const sc4 = videoEl
-              ? landmarkToScreen(thumbTip.x, thumbTip.y, videoEl, mirrorCamera)
-              : { x: mirrorCamera ? 1 - thumbTip.x : thumbTip.x, y: thumbTip.y };
-            const sc8 = videoEl
-              ? landmarkToScreen(indexTip.x, indexTip.y, videoEl, mirrorCamera)
-              : { x: mirrorCamera ? 1 - indexTip.x : indexTip.x, y: indexTip.y };
+            const sc4 = screenLandmarks[4];
+            const sc8 = screenLandmarks[8];
 
             ctx.strokeStyle = hand.isPinching ? '#ffe44d' : '#a56bff';
             ctx.lineWidth = hand.isPinching ? 3 : 1.5;
