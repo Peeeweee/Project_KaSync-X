@@ -189,3 +189,6 @@ Changes preserve all finger thresholds, pinch thresholds, rest capture, model we
 - Skip rebuilding unchanged held chords while keeping every fresh finger press, release, pitch change and watchdog keep-alive.
 
 Tests verify the worker's latest-frame behavior, duplicate-frame protection and an actual finger-press edge arriving before the next diagnostic refresh. A new live capture is still needed to quantify camera FPS and latency changes on the user's device. At 74 ms average pipeline time, reducing model/inference time remains necessary for substantially higher overall tracking rates.
+# Current articulation mapping
+
+The latest user clarification supersedes the earlier articulation mappings in this log: while thumb/index stay pinched, a downward bend of a free finger cuts the selected note/chord. Holding down stays silent; returning the last pressed finger up restarts the selected pitch and sustains it. Opening the pinch stops. The recognition geometry, raw-frame edge delivery and inference model are unchanged by this mapping correction. See `articulation-audit.md` for the current contract and wheel-gap recovery behavior.
