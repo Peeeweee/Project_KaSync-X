@@ -35,7 +35,8 @@ export function ArrangementPanel() {
   const [selection, setSelection] = useState<EventSelection | null>(null);
   const [targetTrackId, setTargetTrackId] = useState(1);
   const [draft, setDraft] = useState({ startBeat: 1, lengthBeats: 1, velocity: 0.8 });
-  const tracking = useTrackingSettingsStore();
+  // Ignore per-frame diagnostics while this panel is hidden.
+  const tracking = useTrackingSettingsStore(state => isOpen ? state : null);
   const midi = useMidiStore();
 
   const armedTrack = tracks.find(track => track.isArmed) ?? tracks[0];
@@ -58,7 +59,7 @@ export function ArrangementPanel() {
     [totalBeats],
   );
 
-  if (!isOpen) return null;
+  if (!isOpen || !tracking) return null;
 
   const commitEvent = () => {
     if (!selection || !selectedEvent) return;
