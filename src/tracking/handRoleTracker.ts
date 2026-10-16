@@ -1,4 +1,4 @@
-import type { HandData, ScreenRole } from '../store/handState';
+import type { HandData } from '../store/handState';
 
 export class HandRoleTracker {
   reset() {
