@@ -11,6 +11,9 @@ const { nodes } = vi.hoisted(() => ({ nodes: [] as Array<{
   set: ReturnType<typeof vi.fn>;
   triggerRelease: ReturnType<typeof vi.fn>;
   triggerAttack: ReturnType<typeof vi.fn>;
+  getValue: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  dispose: ReturnType<typeof vi.fn>;
 }> }));
 
 vi.mock('tone', () => {
@@ -22,12 +25,13 @@ vi.mock('tone', () => {
       toDestination: vi.fn().mockReturnThis(), start: vi.fn().mockReturnThis(),
       set: vi.fn(), dispose: vi.fn(), disconnect: vi.fn(), releaseAll: vi.fn(),
       triggerRelease: vi.fn(), triggerAttack: vi.fn(),
+      getValue: vi.fn(() => -Infinity),
     };
     nodes.push(node);
     return node;
   };
   return Object.fromEntries([
-    ...['Gain', 'Limiter', 'Chorus', 'BitCrusher', 'FeedbackDelay', 'Reverb', 'PolySynth', 'Synth']
+    ...['Gain', 'Limiter', 'Chorus', 'BitCrusher', 'FeedbackDelay', 'Reverb', 'PolySynth', 'Synth', 'Meter']
       .map(kind => [kind, constructor(kind)]),
     ['immediate', () => 10], ['context', { state: 'running' }],
   ]);
@@ -36,6 +40,25 @@ vi.mock('tone', () => {
 afterEach(() => { nodes.length = 0; vi.useRealTimers(); });
 
 describe('live instrument choke', () => {
+  it('measures actual dry/output signals only while diagnostics are open and disconnects both meters', () => {
+    const instrument = new InstrumentService();
+    try {
+      expect(nodes.filter(n => n.kind === 'Meter')).toHaveLength(0);
+      expect(instrument.getAudioStatus()).toMatchObject({dryDb:null,outputDb:null});
+      instrument.startAudioMonitor();
+      instrument.startAudioMonitor();
+      const meters = nodes.filter(n => n.kind === 'Meter');
+      expect(meters).toHaveLength(2);
+      meters[0].getValue.mockReturnValue(-12);
+      meters[1].getValue.mockReturnValue(-Infinity);
+      expect(instrument.getAudioStatus()).toMatchObject({dryDb:-12,outputDb:-Infinity});
+      instrument.stopAudioMonitor();
+      expect(nodes.find(n => n.kind === 'PolySynth')!.disconnect).toHaveBeenCalledWith(meters[0]);
+      expect(nodes.find(n => n.kind === 'Limiter')!.disconnect).toHaveBeenCalledWith(meters[1]);
+      for (const meter of meters) expect(meter.dispose).toHaveBeenCalledOnce();
+      expect(instrument.getAudioStatus()).toMatchObject({dryDb:null,outputDb:null});
+    } finally { instrument.dispose(); }
+  });
   it('applies continuous FX strength and commits the delay tail without rebuilding a voice', () => {
     useEffectDialStore.setState({ level: .5, settledLevel: .5 });
     const instrument = new InstrumentService();
