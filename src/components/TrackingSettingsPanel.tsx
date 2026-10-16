@@ -11,6 +11,8 @@ import { cancelBackendBenchmark } from '../diagnostics/backendBenchmark';
 import { BackendBenchmarkPanel } from './BackendBenchmarkPanel';
 import { TrackingCapturePanel } from './TrackingCapturePanel';
 import { WakandanSelect } from './WakandanSelect';
+import { looperService } from '../looper/recorder';
+import { useLiveNoteReleaseStore } from '../diagnostics/liveNoteRelease';
 
 const qualityLabels: Record<TrackingQuality, string> = {
   auto: 'Auto',
@@ -41,7 +43,26 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (che
   );
 }
 
+function LiveAudioStatus() {
+  const [status, setStatus] = useState(() => looperService.getLiveAudioStatus());
+  useEffect(() => {
+    const stopMonitor = looperService.monitorLiveAudio();
+    // Poll only while Track is open; this never touches the inference/audio path.
+    const timer = setInterval(() => setStatus(looperService.getLiveAudioStatus()), 250);
+    return () => { clearInterval(timer); stopMonitor(); };
+  }, []);
+  const audio = status.instrument;
+  const db = (level: number | null | undefined) => level == null ? 'waiting'
+    : Number.isFinite(level) ? `${level.toFixed(1)} dB` : 'silent';
+  return <div aria-label="Live audio engine status" className="font-mono text-white/60">
+    <p>Engine: {status.context} · Master: {Math.round(status.masterVolume * 100)}%{status.muted ? ' · MUTED' : ''}</p>
+    <p>Synth attacks: {audio?.attacks ?? 0} · Voices: {audio?.activeVoices ?? 0} · Gate: {audio ? `${Math.round(audio.gate * 100)}%` : 'not initialized'}</p>
+    <p>Signal: synth {db(audio?.dryDb)} · after FX {db(audio?.outputDb)}</p>
+  </div>;
+}
+
 function LiveGestureStatus() {
+  const lastRelease = useLiveNoteReleaseStore(state => state.lastRelease);
   const pose = useHandStore(state => state.smoothedHands.map(hand =>
     `${hand.screenRole ?? hand.handedness}: ${hand.isPinching ? 'PINCH CLOSED' : 'PINCH OPEN'} · gap ${hand.pinchDistance.toFixed(2)} · ${hand.isKeyDown ? 'KEY DOWN' : 'KEY UP'} · ${hand.articulationReason === 'motion-unavailable' ? '3D motion unavailable' : hand.articulationReason ?? 'waiting'}${hand.isPointPressed ? ' · AIR TAP' : ''}`,
   ).join(' · ') || 'No hands');
@@ -67,11 +88,13 @@ function LiveGestureStatus() {
   return <div className="space-y-1 rounded border border-white/15 p-3 text-[10px] text-white/70" aria-label="Live gesture recognition">
     <p className="font-mono text-[var(--color-secondary)]">{pose}</p>
     <p>Close below {attack.toFixed(2)} · release at {release.toFixed(2)}</p>
-    <p>Detected input presses (all hands): {tapCount}</p>
+    <p>Detected play onsets (all hands): {tapCount}</p>
     <p>Audio request: {requestedNotes || 'released'}</p>
+    <LiveAudioStatus />
+    <p>Last stop: {lastRelease ? `${lastRelease.reason} · ${Math.round(lastRelease.heldMs)} ms after attack` : 'none'}</p>
     <p>Finger keys: {fingerKeys}</p>
-    <p className="text-white/45">Close thumb/index to play and set a relaxed finger position. Keep that pinch closed: bend middle, ring, or little finger to strike again; lift it back to rest to stop. Hold the bend for longer notes, or bend/lift quickly for staccato.</p>
-    <p className="text-white/45">Move between notes while holding the pinch. Forward/back movement does not articulate. Opening the pinch always releases. If multiple fingers are bent, the note stops when the last one lifts.</p>
+    <p className="text-white/45">Close thumb/index to play. Keep the pinch closed: bend middle, ring, or little finger down to cut the sound. Hold it down to stay silent. Lift it back up to play the selected chord again. Quick down/up motions make short cuts; hold up for longer notes.</p>
+    <p className="text-white/45">Move between notes while holding the pinch. Forward/back movement does not articulate. Opening the pinch always stops. If multiple fingers are down, sound resumes when the last one lifts.</p>
   </div>;
 }
 
