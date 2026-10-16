@@ -433,7 +433,7 @@ textarea:focus-visible,
   --kasync-panel-width: clamp(9.5rem, 11vw, 11rem);
   --kasync-center-space: clamp(4.25rem, 5.5vw, 5rem);
   --kasync-available-space: calc(50vw - var(--kasync-center-space) - var(--kasync-edge) - var(--kasync-panel-width));
-  --kasync-wheel-size: min(65vh, 40vw, 32rem, calc(var(--kasync-available-space) - 0.5rem));
+  --kasync-wheel-size: min(65vh, 40vw, 32rem, calc((var(--kasync-available-space) - 1rem) / 1.1), calc((100vh - 21rem) / 1.1));
   --kasync-stage-y: 50%;
   --kasync-left-wheel-x: calc((var(--kasync-edge) + var(--kasync-panel-width) + 50vw - var(--kasync-center-space)) / 2);
   --kasync-right-wheel-x: calc(100% - var(--kasync-left-wheel-x));
@@ -443,6 +443,7 @@ textarea:focus-visible,
 
 .kasync-mixer,
 .kasync-instruments {
+  top: 9rem !important;
   width: var(--kasync-panel-width) !important;
   min-width: 0;
   transform: none !important;
@@ -458,6 +459,11 @@ textarea:focus-visible,
 .kasync-mixer {
   left: var(--kasync-edge) !important;
 }
+.kasync-mixer > :first-child > div { flex-wrap: wrap; gap: 0.375rem; }
+.kasync-mixer > :first-child > div > div { flex-wrap: wrap; }
+.kasync-mixer > :first-child,
+.kasync-instruments > :first-child { min-height: 3.25rem; border-radius: 0.5rem; justify-content: center; }
+.kasync-instruments > :first-child { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
 
 .kasync-instruments {
   right: var(--kasync-edge) !important;
@@ -491,6 +497,58 @@ textarea:focus-visible,
   max-width: none !important;
   max-height: none !important;
 }
+
+/* A dedicated rim outside the playable wedges. No idle animation loop. */
+.kasync-volume-ring {
+  position: absolute;
+  z-index: 31;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  width: calc(var(--kasync-wheel-size) * 1.1);
+  height: calc(var(--kasync-wheel-size) * 1.1);
+  color: var(--color-secondary);
+}
+.volume-ring-track { fill: none; stroke: #00f0ff; stroke-opacity: .16; stroke-width: 6; }
+.volume-ring-ticks { fill: none; stroke: #9d4edd; stroke-opacity: .65; stroke-width: 1; }
+.volume-ring-level { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+.volume-ring-grip { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: grab; touch-action: none; }
+.volume-ring-grip:focus-visible { outline: none; stroke: #ffffff60; stroke-width: 10; }
+.volume-ring-readout { text-anchor: middle; pointer-events: none; }
+.volume-ring-readout circle { fill: #080c14ed; stroke: #00f0ff50; stroke-width: 1; }
+.volume-ring-readout text { fill: currentColor; font-family: var(--font-mono, monospace); }
+.volume-ring-label { font-size: 8px; letter-spacing: 3px; }
+.volume-ring-value { font-size: 28px; font-weight: 600; }
+.volume-ring-unit { font-size: 11px; }
+.volume-ring-hint { font-size: 8px; letter-spacing: .8px; opacity: .8; }
+.kasync-ring-caption {
+  position: absolute;
+  z-index: 32;
+  top: calc(var(--kasync-stage-y) + var(--kasync-wheel-size) * .55 + .375rem);
+  width: min(16rem, calc(var(--kasync-wheel-size) * .95));
+  transform: translateX(-50%);
+  padding: .375rem .625rem;
+  min-height: 3rem;
+  box-sizing: border-box;
+  border: 1px solid #00f0ff24;
+  border-radius: .625rem;
+  background: #080d16e8;
+  color: #b8c6d5;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.kasync-ring-caption--volume { left: var(--kasync-left-wheel-x); }
+.kasync-ring-caption--effects { left: var(--kasync-right-wheel-x); border-color: #c77dff30; }
+.kasync-ring-caption strong { display: block; color: var(--color-secondary); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.kasync-ring-caption--effects strong { color: var(--color-primary-glow); }
+.kasync-volume-ring.is-active .volume-ring-level { stroke-width: 5; filter: drop-shadow(0 0 4px #00f0ff); }
+.kasync-volume-ring.is-active .volume-ring-readout circle { stroke: currentColor; }
+.kasync-volume-ring.is-active .volume-ring-grip { cursor: grabbing; }
+.kasync-volume-ring.is-effects { color: var(--color-primary-glow); }
+.kasync-volume-ring.is-effects .volume-ring-track { stroke: var(--color-primary); }
+.kasync-volume-ring.is-effects.is-active .volume-ring-level { filter: drop-shadow(0 0 4px #9d4edd); }
+.kasync-volume-ring.is-ready .volume-ring-ticks { stroke: currentColor; stroke-opacity: 1; }
 
 .kasync-song-hud {
   top: clamp(4.5rem, 7vh, 6rem);
@@ -636,7 +694,7 @@ textarea:focus-visible,
     --kasync-panel-width: clamp(8.5rem, 13vw, 10rem);
     --kasync-center-space: 3.8rem;
     --kasync-available-space: calc(50vw - var(--kasync-center-space) - var(--kasync-edge) - var(--kasync-panel-width));
-    --kasync-wheel-size: min(60vh, 38vw, 28rem, calc(var(--kasync-available-space) - 0.5rem));
+    --kasync-wheel-size: min(60vh, 38vw, 28rem, calc((var(--kasync-available-space) - 1rem) / 1.1), calc((100vh - 21rem) / 1.1));
     --kasync-left-wheel-x: calc((var(--kasync-edge) + var(--kasync-panel-width) + 50vw - var(--kasync-center-space)) / 2);
   }
 
@@ -659,10 +717,10 @@ textarea:focus-visible,
     --kasync-panel-width: calc(45vw - 0.75rem);
     --kasync-center-space: 3.2rem;
     --kasync-available-space: calc(50vw - var(--kasync-center-space) - 0.5rem);
-    --kasync-wheel-size: min(54vw, 42vh, 22rem, calc(var(--kasync-available-space) * 2 - 0.5rem));
+    --kasync-wheel-size: min(54vw, 42vh, 22rem, calc((50vw - var(--kasync-center-space)) / 1.1), calc(var(--kasync-available-space) * 2 - 0.5rem));
     --kasync-left-wheel-x: calc((0.5rem + 50vw - var(--kasync-center-space)) / 2);
     --kasync-right-wheel-x: calc(100% - var(--kasync-left-wheel-x));
-    --kasync-stage-y: 58%;
+    --kasync-stage-y: 54%;
   }
 
   .kasync-mixer,
@@ -764,8 +822,8 @@ textarea:focus-visible,
 
 @media (max-height: 650px) {
   .kasync-app {
-    --kasync-stage-y: 55%;
-    --kasync-wheel-size: min(44vw, 38vh, 20rem);
+    --kasync-stage-y: 50%;
+    --kasync-wheel-size: min(44vw, 38vh, 20rem, calc((var(--kasync-available-space) - 1rem) / 1.1));
   }
 
   .kasync-mixer,
@@ -852,4 +910,29 @@ textarea:focus-visible,
 
 @media (max-width: 900px) {
   .kasync-camera-controls { bottom: 13rem !important; }
+}
+
+/* Compact controls keep captions clear of the camera dock and transport. */
+@media (max-width: 900px) {
+  .kasync-mixer > :first-child > :first-child { display: flex; }
+  .kasync-camera-controls { top: calc(4rem + min(28vh, 14rem) + .25rem) !important; bottom: auto !important; transition-property: opacity, border-color, background-color !important; }
+  .kasync-ring-caption { min-height: 3rem; font-size: 9px; line-height: 1.35; padding: .25rem .375rem; }
+  .kasync-ring-caption strong { font-size: 8.5px; }
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  .kasync-app { --kasync-stage-y: 58%; }
+  .kasync-app:has(.kasync-song-hud) { --kasync-stage-y: 61%; }
+  .kasync-camera-controls {
+    top: calc(5.75rem + min(28vh, 14rem) + 2rem) !important;
+    bottom: auto !important;
+  }
+  .kasync-app:has(.kasync-song-hud) .kasync-camera-controls { top: calc(5.75rem + min(28vh, 14rem) + 4.5rem) !important; }
+  .kasync-center-readout { display: none; }
+}
+
+@media (max-width: 900px) and (max-height: 650px) and (orientation: landscape) {
+  .kasync-app { --kasync-stage-y: 54%; --kasync-wheel-size: min(28vh, calc((50vw - var(--kasync-center-space)) / 1.1)); }
+  .kasync-mixer, .kasync-instruments { max-height: min(22vh, 12rem); }
+  .kasync-camera-controls { top: calc(4rem + min(22vh, 12rem) + .25rem) !important; }
+  .kasync-ring-caption { display: none; }
 }
