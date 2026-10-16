@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InstrumentService } from './synth';
+import { useEffectDialStore } from '../store/effectDial';
 
 const { nodes } = vi.hoisted(() => ({ nodes: [] as Array<{
   kind: string;
+  wet: { rampTo: ReturnType<typeof vi.fn> };
+  feedback: { rampTo: ReturnType<typeof vi.fn> };
   gain: { cancelScheduledValues: ReturnType<typeof vi.fn>; rampTo: ReturnType<typeof vi.fn> };
   chain: ReturnType<typeof vi.fn>;
   set: ReturnType<typeof vi.fn>;
@@ -14,7 +17,7 @@ vi.mock('tone', () => {
   const constructor = (kind: string) => function () {
     const node = {
       kind, gain: { cancelScheduledValues: vi.fn(), rampTo: vi.fn() },
-      wet: { value: 0, rampTo: vi.fn() }, volume: { value: 0 },
+      wet: { value: 0, rampTo: vi.fn() }, feedback: { rampTo: vi.fn() }, volume: { value: 0 },
       connect: vi.fn().mockReturnThis(), chain: vi.fn().mockReturnThis(),
       toDestination: vi.fn().mockReturnThis(), start: vi.fn().mockReturnThis(),
       set: vi.fn(), dispose: vi.fn(), disconnect: vi.fn(), releaseAll: vi.fn(),
@@ -33,6 +36,21 @@ vi.mock('tone', () => {
 afterEach(() => { nodes.length = 0; vi.useRealTimers(); });
 
 describe('live instrument choke', () => {
+  it('applies continuous FX strength and commits the delay tail without rebuilding a voice', () => {
+    useEffectDialStore.setState({ level: .5, settledLevel: .5 });
+    const instrument = new InstrumentService();
+    try {
+      instrument.setEffects({ sustain: false, reverb: false, delay: true, chorus: false, bitcrusher: false });
+      const delay = nodes.find(n => n.kind === 'FeedbackDelay')!;
+      useEffectDialStore.setState({ level: .75 });
+      expect(delay.wet.rampTo.mock.lastCall?.[0]).toBeCloseTo(.6);
+      expect(delay.feedback.rampTo).toHaveBeenLastCalledWith(.35, .1);
+      useEffectDialStore.setState({ settledLevel: .75 });
+      expect(delay.feedback.rampTo).toHaveBeenLastCalledWith(.475, .1);
+      expect(nodes.filter(n => n.kind === 'PolySynth')).toHaveLength(1);
+      expect(nodes.filter(n => n.kind === 'Reverb')).toHaveLength(0);
+    } finally { instrument.dispose(); useEffectDialStore.setState({ level: .5, settledLevel: .5 }); }
+  });
   it('keeps a tracked long hold alive while retaining the lost-input watchdog', () => {
     vi.useFakeTimers();
     const instrument = new InstrumentService();
