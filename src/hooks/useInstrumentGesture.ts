@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef } from "react";
 import { useHandStore } from "../store/handState";
 import { useMusicStore } from "../store/musicState";
+import { isVolumeHand } from '../store/volumeGesture';
 
 // ─── Tuning constants ────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export function useInstrumentGesture() {
       }
 
       // Do not register swipes while the hand is pinching — that is a note/chord trigger.
-      if (rightHand.isPinching) {
+      if (rightHand.isPinching || isVolumeHand(rightHand)) {
         samplesRef.current = [];
         return;
       }
