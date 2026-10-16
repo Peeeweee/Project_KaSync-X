@@ -3,6 +3,7 @@ import { useHandStore } from '../store/handState';
 import { useMusicStore } from '../store/musicState';
 import { CHROMATIC_NOTES, getActiveNoteIndex } from '../music/scales';
 import { getScreenHands } from '../tracking/handUtils';
+import { isVolumeHand } from '../store/volumeGesture';
 
 export function getWedgePath(
   innerRadius: number,
@@ -90,6 +91,7 @@ export function RootWheel() {
       const hands = state.smoothedHands;
       const { leftHand } = getScreenHands(hands);
       const hand = leftHand ?? hands[0];
+      if (hand && isVolumeHand(hand)) return;
 
       if (!state.isTracking || !hand) {
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
@@ -102,7 +104,7 @@ export function RootWheel() {
 
       const { indexTipPosition } = hand;
       
-      let wheelCenterX = mode === 'Chord' ? 0.25 : 0.5;
+      let wheelCenterX = 0.25;
       let wheelCenterY = 0.5;
 
       if (svgRef.current) {
@@ -192,7 +194,7 @@ export function RootWheel() {
   return (
     <div
       ref={containerRef}
-      className={`kasync-root-wheel kasync-performance-wheel ${mode === 'Chord' ? 'kasync-performance-wheel--left' : 'kasync-performance-wheel--solo'} absolute z-30 pointer-events-none drop-shadow-2xl`}
+      className="kasync-root-wheel kasync-performance-wheel kasync-performance-wheel--left absolute z-30 pointer-events-none drop-shadow-2xl"
       style={{ transform: 'translate(-50%, -50%)' }}
     >
       <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${SIZE} ${SIZE}`} className="kasync-wheel-svg">
