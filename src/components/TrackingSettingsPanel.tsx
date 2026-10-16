@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useHandStore } from '../store/handState';
+import { useMusicStore } from '../store/musicState';
+import { calibratePinchThresholds } from '../tracking/pinchSettings';
 import {
   useTrackingSettingsStore,
   type TrackingQuality,
@@ -41,8 +43,14 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (che
 
 function LiveGestureStatus() {
   const pose = useHandStore(state => state.smoothedHands.map(hand =>
-    `${hand.screenRole ?? hand.handedness}: ${hand.articulationReason === 'navigation' ? 'NAVIGATING' : hand.isKeyDown ? 'PRESSED' : hand.isPinching ? 'LIFTED / PINCHED' : 'RELAXED'}`,
+    `${hand.screenRole ?? hand.handedness}: ${hand.isPinching ? 'PINCH CLOSED' : 'PINCH OPEN'} · gap ${hand.pinchDistance.toFixed(2)} · ${hand.isKeyDown ? 'KEY DOWN' : 'KEY UP'} · ${hand.articulationReason === 'motion-unavailable' ? '3D motion unavailable' : hand.articulationReason ?? 'waiting'}${hand.isPointPressed ? ' · AIR TAP' : ''}`,
   ).join(' · ') || 'No hands');
+  const attack = useTrackingSettingsStore(state => state.pinchThreshold);
+  const release = useTrackingSettingsStore(state => state.pinchReleaseThreshold);
+  const requestedNotes = useMusicStore(state => state.playingNotes.join(' · '));
+  const fingerKeys = useHandStore(state => state.smoothedHands.map(h => ['Middle','Ring','Little'].map((name,i) =>
+    `${name}: ${h.fingerCurls?.[i] == null ? 'unavailable' : h.articulatingFingers?.includes(name) ? 'DOWN' : 'rest'}`,
+  ).join(' · ')).join(' / ') || 'no hands');
   const [tapCount, setTapCount] = useState(0);
   useEffect(() => {
     let previous = new Map<string, { down: boolean; id: number }>();
@@ -58,8 +66,12 @@ function LiveGestureStatus() {
   }, []);
   return <div className="space-y-1 rounded border border-white/15 p-3 text-[10px] text-white/70" aria-label="Live gesture recognition">
     <p className="font-mono text-[var(--color-secondary)]">{pose}</p>
-    <p>Detected presses: {tapCount}</p>
-    <p className="text-white/45">Close your pinch to play, keep it closed to move between notes, and open it to release. Close and open quickly for staccato; hold for longer notes. Moving toward or away from the camera does not cut the sound.</p>
+    <p>Close below {attack.toFixed(2)} · release at {release.toFixed(2)}</p>
+    <p>Detected input presses (all hands): {tapCount}</p>
+    <p>Audio request: {requestedNotes || 'released'}</p>
+    <p>Finger keys: {fingerKeys}</p>
+    <p className="text-white/45">Close thumb/index to play and set a relaxed finger position. Keep that pinch closed: bend middle, ring, or little finger to strike again; lift it back to rest to stop. Hold the bend for longer notes, or bend/lift quickly for staccato.</p>
+    <p className="text-white/45">Move between notes while holding the pinch. Forward/back movement does not articulate. Opening the pinch always releases. If multiple fingers are bent, the note stops when the last one lifts.</p>
   </div>;
 }
 
@@ -86,38 +98,56 @@ function TrackingSettingsContent() {
   }, []);
   const livePinchDistance = useHandStore((state) => state.smoothedHands[0]?.pinchDistance ?? null);
   const [openDistance, setOpenDistance] = useState<number | null>(null);
+  const calibrationHand = useRef<string | null>(null);
   const [calibrationMessage, setCalibrationMessage] = useState('Show one open hand, then capture.');
 
   const captureOpen = () => {
-    if (livePinchDistance === null) {
+    const hands = useHandStore.getState().smoothedHands;
+    if (hands.length !== 1) {
+      setCalibrationMessage('Show exactly one hand for calibration.');
+      return;
+    }
+    const distance = hands[0].pinchDistance;
+    if (!Number.isFinite(distance)) {
       setCalibrationMessage('No hand detected. Hold one hand inside the camera view.');
       return;
     }
-    setOpenDistance(livePinchDistance);
+    setOpenDistance(distance);
+    calibrationHand.current = hands[0].handedness;
     setCalibrationMessage('Now touch thumb to index finger and capture pinch.');
   };
 
   const capturePinch = () => {
-    if (livePinchDistance === null || openDistance === null) {
-      setCalibrationMessage(openDistance === null ? 'Capture an open hand first.' : 'No hand detected.');
+    if (openDistance === null) {
+      setCalibrationMessage('Capture an open hand first.');
       return;
     }
-    if (livePinchDistance >= openDistance - 0.08) {
+    const hands = useHandStore.getState().smoothedHands;
+    if (hands.length !== 1 || hands[0].handedness !== calibrationHand.current) {
+      setCalibrationMessage('Use the same single hand for both calibration steps.');
+      return;
+    }
+    const distance = hands[0].pinchDistance;
+    if (!Number.isFinite(distance)) {
+      setCalibrationMessage('No hand detected.');
+      return;
+    }
+    const thresholds = calibratePinchThresholds(openDistance, distance);
+    if (!thresholds) {
       setCalibrationMessage('Pinch more tightly, then try again.');
       return;
     }
 
-    const range = openDistance - livePinchDistance;
-    const attack = Math.min(0.55, Math.max(0.18, livePinchDistance + range * 0.28));
-    const release = Math.min(0.75, Math.max(attack + 0.06, livePinchDistance + range * 0.43));
-    settings.setPreferences({ pinchThreshold: attack, pinchReleaseThreshold: release });
+    settings.setPreferences(thresholds);
     setOpenDistance(null);
+    calibrationHand.current = null;
     setCalibrationMessage('Calibrated. Pinch transitions now match your hand and camera.');
   };
 
   const reset = () => {
     settings.resetPreferences();
     setOpenDistance(null);
+    calibrationHand.current = null;
     setCalibrationMessage('Defaults restored. Show one open hand to recalibrate.');
   };
 
