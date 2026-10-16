@@ -6,6 +6,8 @@ import { useMusicStore } from '../store/musicState';
 import { looperService } from '../looper/recorder';
 import { PinchPressTracker } from '../tracking/pinchPressTracker';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
+import { useVolumeGestureStore } from '../store/volumeGesture';
+import { useLooperStore } from '../store/looperState';
 
 vi.mock('../looper/recorder', () => ({ looperService: {
   triggerChord: vi.fn(), triggerNote: vi.fn(), releaseChord: vi.fn(), releaseNote: vi.fn(),
@@ -23,6 +25,7 @@ const publish = (...hands: HandData[]) => act(() => useHandStore.getState().setH
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  useVolumeGestureStore.setState({ owner: null, effectOwner: null });
   useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: null });
   useHandStore.getState().setHands([], []);
   useMusicStore.getState().setMusicState({ mode: 'Chord', hoveredRoot: 'C', hoveredQuality: 'maj',
@@ -31,6 +34,73 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('performed piano articulation', () => {
+  it('preserves the Song effect selection while the right palm shapes it', () => {
+    const track = useLooperStore.getState().tracks.find(t => t.isArmed)!;
+    const effects = track.effects;
+    useLooperStore.getState().setTrackProperty(track.id, 'effects', {
+      reverb: false, delay: false, chorus: false, bitcrusher: false, sustain: false,
+    });
+    useMusicStore.getState().setMusicState({ mode: 'Song', hoveredEffect: 'delay' });
+    renderHook(() => useAudioTrigger(true));
+    try {
+      publish(hand(false,false), hand(false,true,'right'));
+      expect(useLooperStore.getState().tracks.find(t => t.id === track.id)?.effects.delay).toBe(true);
+      act(() => useVolumeGestureStore.setState({ effectOwner: 'right' }));
+      publish(hand(false,false), hand(false,false,'right'));
+      expect(useLooperStore.getState().tracks.find(t => t.id === track.id)?.effects.delay).toBe(true);
+      act(() => useVolumeGestureStore.setState({ effectOwner: null }));
+      publish(hand(false,false), hand(false,false,'right'));
+      expect(useLooperStore.getState().tracks.find(t => t.id === track.id)?.effects.delay).toBe(false);
+    } finally { useLooperStore.getState().setTrackProperty(track.id,'effects',effects); }
+  });
+  it('keeps a left-hand note playing while the right open palm controls FX', () => {
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 1 };
+    publish(note, hand(false,false,'right'));
+    act(() => useVolumeGestureStore.setState({ effectOwner: 'right' }));
+    publish(note, { ...hand(true,false,'right'), isKeyDown: true, pressId: 1 });
+    expect(looperService.triggerChord).toHaveBeenCalledTimes(1);
+    expect(useMusicStore.getState().playingNotes).toContain('C4');
+    publish({ ...note, isKeyDown: false, isPinching: false }, hand(false,false,'right'));
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+  });
+  it.each(['Chord', 'Song', 'Melody'] as const)('does not play a volume pinch or promote the quality hand to notes in %s', mode => {
+    useMusicStore.getState().setMusicState({ mode });
+    renderHook(() => useAudioTrigger(true));
+    act(() => useVolumeGestureStore.setState({ owner: 'left' }));
+    publish(hand(false, true), hand(false, true, 'right'));
+    expect(looperService.triggerChord).not.toHaveBeenCalled();
+    expect(looperService.triggerNote).not.toHaveBeenCalled();
+  });
+  it('keeps chord articulation on the note hand when the quality hand pinches later', () => {
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 1 };
+    const quality = { ...hand(false, true, 'right'), isKeyDown: true, pressId: 1 };
+    publish(note, hand(false, false, 'right'));
+    expect(looperService.triggerChord).toHaveBeenCalledTimes(1);
+    publish(note, quality);
+    expect(looperService.triggerChord).toHaveBeenCalledTimes(1);
+    publish({ ...note, isPinching: false, isKeyDown: false }, quality);
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+    publish({ ...note, pressId: 2 }, quality);
+    expect(looperService.triggerChord).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['Chord', 'Song', 'Melody'] as const)('releases a pinch even if the point detector is still down in %s', mode => {
+    useMusicStore.getState().setMusicState({ mode });
+    renderHook(() => useAudioTrigger(true));
+    const attack = mode === 'Melody' ? looperService.triggerNote : looperService.triggerChord;
+    for (let id = 1; id <= 7; id++) {
+      if (id === 4) act(() => useMusicStore.getState().setMusicState({ hoveredRoot: 'D' }));
+      publish({ ...hand(false, true), isKeyDown: true, pressId: id });
+      expect(attack).toHaveBeenCalledTimes(id);
+      expect(useMusicStore.getState().playingNotes).toContain(id < 4 ? 'C4' : 'D4');
+      publish({ ...hand(true, false), isKeyDown: true, pressId: id });
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+      publish({ ...hand(true, false), isKeyDown: true, pressId: id });
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+    }
+  });
   it.each(['Chord', 'Song', 'Melody'] as const)('plays seven presses after wheel resolution, then a new pitch in %s', mode => {
     useMusicStore.getState().setMusicState({ mode, hoveredRoot: 'B' });
     renderHook(() => useAudioTrigger(true));
