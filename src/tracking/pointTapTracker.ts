@@ -5,6 +5,7 @@ interface TapSample {
   isPinching: boolean;
   handScale?: number;
   cameraTipY?: number;
+  imageYScale?: number;
 }
 
 /** A pose is not a strike: require movement, then retreat before another strike. */
@@ -19,10 +20,10 @@ export class PointTapTracker {
   update(sample: TapSample): boolean {
     if (!this.baseline) {
       this.referenceScale = Math.max(0.04, sample.handScale ?? 1);
-      this.referenceY = sample.cameraTipY ?? 0;
+      this.referenceY = (sample.cameraTipY ?? 0) * (sample.imageYScale ?? 1);
     }
     const scores = [sample.verticalTapScore, sample.forwardThrust,
-      sample.cameraTipY === undefined ? 0 : (sample.cameraTipY - this.referenceY) / this.referenceScale,
+      sample.cameraTipY === undefined ? 0 : (sample.cameraTipY * (sample.imageYScale ?? 1) - this.referenceY) / this.referenceScale,
       sample.handScale === undefined ? 0 : 2 * Math.log(Math.max(0.04, sample.handScale) / this.referenceScale),
     ];
     if (sample.isPinching) {
