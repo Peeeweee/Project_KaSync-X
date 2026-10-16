@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useHandStore } from '../store/handState';
 import {
   useTrackingSettingsStore,
   type TrackingQuality,
 } from '../store/trackingSettings';
+import { cancelBackendBenchmark } from '../diagnostics/backendBenchmark';
+import { BackendBenchmarkPanel } from './BackendBenchmarkPanel';
+import { TrackingCapturePanel } from './TrackingCapturePanel';
 import { WakandanSelect } from './WakandanSelect';
 
 const qualityLabels: Record<TrackingQuality, string> = {
@@ -35,13 +39,54 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (che
   );
 }
 
+function LiveGestureStatus() {
+  const pose = useHandStore(state => state.smoothedHands.map(hand =>
+    `${hand.screenRole ?? hand.handedness}: ${hand.articulationReason === 'navigation' ? 'NAVIGATING' : hand.isKeyDown ? 'PRESSED' : hand.isPinching ? 'LIFTED / PINCHED' : 'RELAXED'}`,
+  ).join(' · ') || 'No hands');
+  const [tapCount, setTapCount] = useState(0);
+  useEffect(() => {
+    let previous = new Map<string, { down: boolean; id: number }>();
+    return useHandStore.subscribe(state => {
+      const current = new Map(state.smoothedHands.map(h => [h.handedness, {
+        down: h.isKeyDown ?? (h.isPinching || !!h.isPointPressed), id: h.pressId ?? 0,
+      }]));
+      const fresh = [...current].filter(([key, press]) => press.down &&
+        (!previous.get(key)?.down || previous.get(key)?.id !== press.id)).length;
+      previous = current;
+      if (fresh > 0) setTapCount(count => count + fresh);
+    });
+  }, []);
+  return <div className="space-y-1 rounded border border-white/15 p-3 text-[10px] text-white/70" aria-label="Live gesture recognition">
+    <p className="font-mono text-[var(--color-secondary)]">{pose}</p>
+    <p>Detected presses: {tapCount}</p>
+    <p className="text-white/45">Close your pinch to play, keep it closed to move between notes, and open it to release. Close and open quickly for staccato; hold for longer notes. Moving toward or away from the camera does not cut the sound.</p>
+  </div>;
+}
+
 export function TrackingSettingsPanel() {
+  const isPanelOpen = useTrackingSettingsStore((state) => state.isPanelOpen);
+  if (!isPanelOpen) return null;
+  return createPortal(<TrackingSettingsContent />, document.body);
+}
+
+function TrackingSettingsContent() {
   const settings = useTrackingSettingsStore();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') useTrackingSettingsStore.getState().setPanelOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
+  }, []);
   const livePinchDistance = useHandStore((state) => state.smoothedHands[0]?.pinchDistance ?? null);
   const [openDistance, setOpenDistance] = useState<number | null>(null);
   const [calibrationMessage, setCalibrationMessage] = useState('Show one open hand, then capture.');
-
-  if (!settings.isPanelOpen) return null;
 
   const captureOpen = () => {
     if (livePinchDistance === null) {
@@ -78,11 +123,12 @@ export function TrackingSettingsPanel() {
 
   return (
     <section
+      id="kasync-tracking-settings"
+      role="dialog"
       aria-label="Hand tracking settings"
-      className="absolute bottom-14 right-6 z-50 w-[min(22rem,calc(100vw-3rem))] border border-[var(--color-secondary)]/40 bg-[#070912]/95 p-4 text-white shadow-[0_0_28px_rgba(47,217,196,0.22)] backdrop-blur-xl"
-      style={{ clipPath: 'polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px)' }}
+      className="kasync-tracking-panel"
     >
-      <div className="mb-4 flex items-start justify-between">
+      <div className="kasync-tracking-header flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-bold uppercase tracking-[0.24em] text-[var(--color-secondary)]">Tracking Core</div>
           <div className="mt-1 font-mono text-[9px] uppercase tracking-wider text-white/45">
@@ -92,15 +138,45 @@ export function TrackingSettingsPanel() {
         </div>
         <button
           type="button"
+          ref={closeButtonRef}
           aria-label="Close tracking settings"
           onClick={() => settings.setPanelOpen(false)}
-          className="px-2 text-lg leading-none text-white/50 hover:text-white"
+          className="shrink-0 rounded border border-white/15 px-2 py-1 text-lg leading-none text-white/70 hover:text-white focus-visible:outline-2 focus-visible:outline-[var(--color-secondary)]"
         >
           ×
         </button>
       </div>
 
-      <div className="space-y-4">
+      <div className="shrink-0 px-4 py-2"><LiveGestureStatus /></div>
+      <div className="kasync-tracking-content space-y-4">
+        <dl className="grid grid-cols-2 gap-2 border-y border-white/10 py-3 font-mono text-[9px] text-white/60" aria-label="Live tracking performance">
+          <div><dt>Actual tracking</dt><dd className="text-white">{settings.actualTrackingFps?.toFixed(1) ?? '—'} FPS</dd></div>
+          <div><dt>Frame capture · avg</dt><dd className="text-white">{settings.captureLatencyMs?.toFixed(1) ?? '—'} ms</dd></div>
+          <div><dt>Pipeline · avg</dt><dd className="text-white">{settings.pipelineLatencyMs?.toFixed(1) ?? '—'} ms</dd></div>
+          <div><dt>Pipeline · p95</dt><dd className="text-white">{settings.pipelineP95Ms?.toFixed(1) ?? '—'} ms</dd></div>
+        </dl>
+        <p className="text-[9px] leading-relaxed text-white/45">Pipeline timings cover frame capture through gesture processing. They exclude camera exposure, display, and audio output delays.</p>
+        <p className="font-mono text-[9px] text-white/60">Inference input: {settings.inferenceWidth && settings.inferenceHeight ? `${settings.inferenceWidth} × ${settings.inferenceHeight}` : 'Waiting for frames'}</p>
+        {settings.fallbackReason && <p className="break-words text-[9px] leading-relaxed text-amber-300/80">Fallback reason: {settings.fallbackReason}</p>}
+        <div className="space-y-2 border-y border-white/10 py-3">
+          <label className="block text-[10px] uppercase tracking-wider text-white/70">
+            Live tracking path
+            <WakandanSelect aria-label="Live tracking path" value={settings.trackingEngine}
+              onChange={event => { cancelBackendBenchmark(); settings.setPreference('trackingEngine', event.target.value as 'compatible' | 'worker'); }} className="mt-2 w-full">
+              <option value="compatible">Compatible camera · recommended</option>
+              <option value="worker">Worker · experimental</option>
+            </WakandanSelect>
+          </label>
+          <button type="button" className="w-full rounded border border-[var(--color-secondary)]/40 px-3 py-2 text-[10px] uppercase tracking-wide text-[var(--color-secondary)] hover:bg-white/5"
+            onClick={() => {
+              cancelBackendBenchmark();
+              settings.setPreference('trackingEngine', 'compatible');
+              settings.restartTracking();
+            }}>Restore live tracking</button>
+          <p className="text-[9px] leading-relaxed text-white/50">Compatible camera uses the original direct-video input. Use Restore if hands stop responding; the camera stays connected and your music settings are retained.</p>
+        </div>
+        <BackendBenchmarkPanel />
+        <TrackingCapturePanel />
         <label className="block text-[10px] uppercase tracking-[0.16em] text-white/70">
           <span className="mb-1.5 block">Tracking quality</span>
           <WakandanSelect
