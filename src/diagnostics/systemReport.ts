@@ -32,9 +32,17 @@ export function createSystemReport() {
     },
     tracking: {
       backend: tracking.backend,
+      trackingEngine: tracking.trackingEngine,
+      fallbackReason: tracking.fallbackReason,
+      inferenceWidth: tracking.inferenceWidth,
+      inferenceHeight: tracking.inferenceHeight,
       quality: tracking.quality,
       targetFps: tracking.targetFps,
       inferenceLatencyMs: tracking.inferenceLatencyMs,
+      actualTrackingFps: tracking.actualTrackingFps,
+      pipelineLatencyMs: tracking.pipelineLatencyMs,
+      pipelineP95Ms: tracking.pipelineP95Ms,
+      captureLatencyMs: tracking.captureLatencyMs,
       lowPerformanceMode: tracking.isLowPerformance,
     },
     midi: {
