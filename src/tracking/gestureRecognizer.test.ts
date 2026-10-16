@@ -17,6 +17,27 @@ function createMockLandmarks(thumbTip: Landmark, indexTip: Landmark): Landmark[]
 }
 
 describe('computeGestures', () => {
+  it('measures the same physical gap after rotation on a widescreen camera', () => {
+    const video = document.createElement('video');
+    Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+    const pose = createMockLandmarks({ x: 0.45, y: 0.32, z: 0 }, { x: 0.515, y: 0.32, z: 0 });
+    const yScale = 720 / 1280;
+    const rotated = pose.map(p => ({ ...p, x: 0.5 - (p.y - 0.5) * yScale,
+      y: 0.5 + (p.x - 0.5) / yScale }));
+    const initial = computeGestures(pose, video);
+    const turned = computeGestures(rotated, video);
+    expect(initial.pinchDistance).toBeCloseTo(turned.pinchDistance, 6);
+    expect(initial.isPinching).toBe(turned.isPinching);
+  });
+
+  it('recognizes a small opening after contact instead of retaining a pinch in the old release band', () => {
+    const closed = createMockLandmarks({ x: 0.45, y: 0.32, z: 0 }, { x: 0.46, y: 0.32, z: 0 });
+    const opening = createMockLandmarks({ x: 0.45, y: 0.32, z: 0 }, { x: 0.565, y: 0.32, z: 0 });
+    expect(computeGestures(closed).isPinching).toBe(true);
+    expect(computeGestures(opening, null, { previousPinching: true }).isPinching).toBe(false);
+    expect(computeGestures(opening, null, { previousPinching: true, pinchReleaseThreshold: 0.44 }).isPinching).toBe(true);
+  });
+
   it('detects when pinching', () => {
     // Distance exactly 0
     const landmarks = createMockLandmarks(
@@ -57,7 +78,7 @@ describe('computeGestures', () => {
   it('uses hysteresis to avoid flickering near the pinch boundary', () => {
     const betweenThresholds = createMockLandmarks(
       { x: 0.5, y: 0.5, z: 0 },
-      { x: 0.615, y: 0.5, z: 0 },
+      { x: 0.602, y: 0.5, z: 0 },
     );
 
     expect(computeGestures(betweenThresholds, null, { previousPinching: false }).isPinching).toBe(false);
