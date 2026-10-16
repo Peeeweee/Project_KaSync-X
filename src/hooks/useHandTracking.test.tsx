@@ -78,7 +78,7 @@ describe('camera frame scheduling', () => {
       now=210;await act(async()=>TrackingWorkerMock.instance.receive(result(1,1,6)));
       expect(capture).toHaveBeenCalledTimes(3);
       expect(processCalls()[2][0].timestamp).toBe(210);
-      expect(useHandStore.getState().smoothedHands[0]).toMatchObject({pressId:2,articulationReason:'finger-press'});
+      expect(useHandStore.getState().smoothedHands[0]).toMatchObject({isKeyDown:false,pressId:1,articulationReason:'finger-press'});
       expect(reports).toBe(1);
     } finally { unsub();hook.unmount(); }
   });
@@ -255,7 +255,7 @@ describe('compatible live tracking recovery', () => {
       // Only the Left middle finger bends, and must articulate despite heavy EMA.
       const label = (categoryName: string) => [{ categoryName, displayName: '', index: 0, score: 1 }];
       for (const [time, bend, down, reason] of [[1200, 0, true, 'pinch-start'],
-        [1300, 1, true, 'finger-press'], [1400, 0, false, 'finger-lift']] as const) {
+        [1300, 1, false, 'finger-press'], [1400, 0, true, 'finger-lift']] as const) {
         const left = fingerPinchHand([bend,0,0]);
         const right = fingerPinchHand([0,0,0],0.7,0.1);
         mainDetect.mockReturnValue({ landmarks: [right.image, left.image],
