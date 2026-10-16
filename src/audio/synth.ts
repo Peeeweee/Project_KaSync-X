@@ -19,6 +19,9 @@ export class InstrumentService {
   private isPlaying: boolean = false;
   private sustainEnabled = false;
   private pendingSustainRelease = false;
+  private attackCount = 0;
+  private dryMeter: Tone.Meter | null = null;
+  private outputMeter: Tone.Meter | null = null;
   
   // Failsafe watchdog to prevent hanging notes if release is missed
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,11 +125,43 @@ export class InstrumentService {
     if (this.isPlaying) this.resetWatchdog();
   }
 
+  public getAudioStatus() {
+    return { attacks: this.attackCount, activeVoices: this.synth.activeVoices,
+      gate: this.outputGate.gain.value, playing: this.isPlaying,
+      dryDb: this.meterDb(this.dryMeter), outputDb: this.meterDb(this.outputMeter) };
+  }
+
+  private meterDb(meter: Tone.Meter | null) {
+    if (!meter) return null;
+    const value = meter.getValue();
+    return Array.isArray(value) ? Math.max(...value) : value;
+  }
+
+  public startAudioMonitor() {
+    if (this.dryMeter) return;
+    this.dryMeter = new Tone.Meter({ smoothing: 0 });
+    this.outputMeter = new Tone.Meter({ smoothing: 0 });
+    this.synth.connect(this.dryMeter);
+    this.limiter.connect(this.outputMeter);
+  }
+
+  public stopAudioMonitor() {
+    if (this.dryMeter) this.synth.disconnect(this.dryMeter);
+    if (this.outputMeter) this.limiter.disconnect(this.outputMeter);
+    this.dryMeter?.dispose();
+    this.outputMeter?.dispose();
+    this.dryMeter = null;
+    this.outputMeter = null;
+  }
+
   private switchInstrument(newInstrument: InstrumentType) {
+    const monitored = this.dryMeter !== null;
+    this.stopAudioMonitor();
     const wasPlaying = this.isPlaying;
     const notes = [...this.currentNotes];
     this.releaseVoices();
     this.synth = this.buildSynth(newInstrument);
+    if (monitored) this.startAudioMonitor();
     if (wasPlaying && notes.length > 0) {
       this.triggerChord(notes, 0.7);
     }
@@ -173,7 +208,10 @@ export class InstrumentService {
     this.pendingSustainRelease = false;
 
     // Live input should bypass Tone's scheduler look-ahead.
-    if (notesToAttack.length > 0) this.synth.triggerAttack(notesToAttack, eventTime, safeVelocity);
+    if (notesToAttack.length > 0) {
+      this.synth.triggerAttack(notesToAttack, eventTime, safeVelocity);
+      this.attackCount++;
+    }
     this.resetWatchdog();
   }
 
@@ -268,6 +306,7 @@ export class InstrumentService {
   }
 
   public dispose() {
+    this.stopAudioMonitor();
     if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
     this.unsubscribeMusicStore();
     this.unsubscribeEffectDial();
