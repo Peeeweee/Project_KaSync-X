@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import * as Tone from 'tone';
+import { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useLooperStore } from '../store/looperState';
 import type { InstrumentType } from '../store/musicState';
 import { exportMIDI } from '../looper/midiExport';
@@ -11,21 +11,13 @@ import { useArrangementStore } from '../store/arrangementState';
 const INSTRUMENTS: InstrumentType[] = ['Subtractive', 'FM', 'Electric Piano', 'Pad'];
 
 export function MixerPanel() {
-  const { tracks, setTrackProperty, armTrack, clearTrackEvents, isGlobalRecording, bpm, loopBars, beatsPerBar, masterVolume } = useLooperStore();
+  const { tracks, setTrackProperty, armTrack, clearTrackEvents, isGlobalRecording, bpm, loopBars, beatsPerBar } = useLooperStore(useShallow(s => ({
+    tracks: s.tracks, setTrackProperty: s.setTrackProperty, armTrack: s.armTrack, clearTrackEvents: s.clearTrackEvents,
+    isGlobalRecording: s.isGlobalRecording, bpm: s.bpm, loopBars: s.loopBars, beatsPerBar: s.beatsPerBar,
+  })));
   const [isExportingWav, setIsExportingWav] = useState(false);
   const { isPanelOpen, togglePanel } = useMidiStore();
   const toggleArrangement = useArrangementStore(state => state.toggle);
-
-  useEffect(() => {
-    if (masterVolume === 0) {
-      Tone.Destination.mute = true;
-    } else {
-      Tone.Destination.mute = false;
-      // Exponential curve for volume mapping
-      const db = 20 * Math.log10(masterVolume);
-      Tone.Destination.volume.rampTo(db, 0.1);
-    }
-  }, [masterVolume]);
 
   const handleExportMidi = () => {
     exportMIDI(tracks, bpm);
@@ -133,7 +125,7 @@ export function MixerPanel() {
               aria-label={`Mute Track ${track.id + 1}`}
               aria-pressed={track.isMuted}
               onClick={() => setTrackProperty(track.id, 'isMuted', !track.isMuted)}
-              className={`w-4 h-4 rounded-sm text-[8px] font-bold flex items-center justify-center transition-all ${track.isMuted ? 'bg-[var(--color-danger)] text-white shadow-[0_0_5px_var(--color-danger)]' : 'bg-[var(--color-metal)] text-[var(--color-bg)] opacity-50 hover:opacity-100'}`}
+              className={`w-4 h-4 rounded-sm text-[8px] font-bold flex items-center justify-center transition-all ${track.isMuted ? 'bg-[var(--color-danger)] text-white shadow-[0_0_5px_var(--color-danger)]' : 'bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white'}`}
             >
               M
             </button>
@@ -141,7 +133,7 @@ export function MixerPanel() {
               aria-label={`Solo Track ${track.id + 1}`}
               aria-pressed={track.isSoloed}
               onClick={() => setTrackProperty(track.id, 'isSoloed', !track.isSoloed)}
-              className={`w-4 h-4 rounded-sm text-[8px] font-bold flex items-center justify-center transition-all ${track.isSoloed ? 'bg-[var(--color-highlight)] text-black shadow-[0_0_5px_var(--color-highlight)]' : 'bg-[var(--color-metal)] text-[var(--color-bg)] opacity-50 hover:opacity-100'}`}
+              className={`w-4 h-4 rounded-sm text-[8px] font-bold flex items-center justify-center transition-all ${track.isSoloed ? 'bg-[var(--color-highlight)] text-black shadow-[0_0_5px_var(--color-highlight)]' : 'bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white'}`}
             >
               S
             </button>
