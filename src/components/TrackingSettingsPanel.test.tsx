@@ -2,8 +2,39 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { TrackingSettingsPanel } from './TrackingSettingsPanel';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
+import { useHandStore, type HandData } from '../store/handState';
 
 describe('tracking settings overlay', () => {
+  it('calibrates from the same single hand and keeps the release close to contact', () => {
+    const makeHand = (handedness: string, pinchDistance: number): HandData => ({
+      handedness, pinchDistance, landmarks: [], isPinching: pinchDistance < 0.2, pinchStrength: 0.8,
+      palmPosition: { x: 0.4, y: 0.4 }, indexTipPosition: { x: 0.4, y: 0.4 }, handRotation: 0,
+    });
+    const publish = (...hands: HandData[]) => act(() => useHandStore.getState().setHands(hands, hands));
+    const original = useTrackingSettingsStore.getState();
+    useTrackingSettingsStore.getState().setPanelOpen(true);
+    const view = render(<TrackingSettingsPanel />);
+    try {
+      publish(makeHand('Left', 1.2), makeHand('Right', 0.08));
+      fireEvent.click(screen.getByRole('button', { name: /1 · Open hand/i }));
+      expect(screen.getByText('Show exactly one hand for calibration.')).toBeTruthy();
+      publish(makeHand('Left', 1.2));
+      fireEvent.click(screen.getByRole('button', { name: /1 · Open hand/i }));
+      publish(makeHand('Right', 0.08));
+      fireEvent.click(screen.getByRole('button', { name: /2 · Pinch/i }));
+      expect(screen.getByText('Use the same single hand for both calibration steps.')).toBeTruthy();
+      publish(makeHand('Left', 0.08));
+      fireEvent.click(screen.getByRole('button', { name: /2 · Pinch/i }));
+      expect(useTrackingSettingsStore.getState().pinchReleaseThreshold).toBeLessThan(0.3);
+      expect(screen.getByText(/Audio request:/)).toBeTruthy();
+    } finally {
+      view.unmount();
+      useTrackingSettingsStore.getState().setPreferences({ pinchThreshold: original.pinchThreshold,
+        pinchReleaseThreshold: original.pinchReleaseThreshold });
+      useTrackingSettingsStore.getState().setPanelOpen(false);
+      useHandStore.getState().setHands([], []);
+    }
+  });
   it('escapes camera containment and restores focus when dismissed', () => {
     const trigger = document.createElement('button');
     document.body.appendChild(trigger);
