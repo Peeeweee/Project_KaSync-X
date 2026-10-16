@@ -2,10 +2,13 @@ import { useEffect } from 'react';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 
 export function usePerformanceMonitor(
-  _thresholdFps: number = 18,
-  _durationMs: number = 10000,
-  _recoveryDurationMs: number = 2500,
+  thresholdFps: number = 18,
+  durationMs: number = 10000,
+  recoveryDurationMs: number = 2500,
 ) {
+  void thresholdFps;
+  void durationMs;
+  void recoveryDurationMs;
   useEffect(() => {
     // Ensure optimal performance: maintain full frame rate and clear any throttles
     useTrackingSettingsStore.getState().setLowPerformance(false);
