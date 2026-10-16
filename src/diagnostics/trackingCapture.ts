@@ -22,9 +22,11 @@ export interface CaptureFrame {
   smoothingAlpha: number;
   pinchThreshold: number;
   pinchReleaseThreshold: number;
+  pinchMetricVersion?: number;
   targetFps: number;
   mirrorCamera: boolean;
-  keyStates?: { hand: string; pinching: boolean; down: boolean; pressId: number; reason: string | null }[];
+  keyStates?: { hand: string; pinching: boolean; down: boolean; pressId: number; reason: string | null;
+    pinchDistance: number; point: boolean; role: string | null }[];
   selectedRoot?: string | null;
   selectedQuality?: string | null;
   playingNotes?: string[];
@@ -34,7 +36,7 @@ export interface CaptureReport {
   startedAt: string;
   durationMs: number;
   expectedGesture: ExpectedGesture;
-  settings: { quality: string; smoothingAlpha: number; pinchThreshold: number; pinchReleaseThreshold: number; targetFps: number };
+  settings: { quality: string; smoothingAlpha: number; pinchThreshold: number; pinchReleaseThreshold: number; targetFps: number; pinchMetricVersion?: number };
   summary: {
     frames: number; completedFps: number;
     inferenceAvgMs: number | null; pipelineAvgMs: number | null; pipelineP95Ms: number | null;
@@ -68,7 +70,8 @@ export function startTrackingCapture(expected: ExpectedGesture) {
     start: performance.now() + 3000,
     startedAt: new Date(Date.now() + 3000).toISOString(), expected,
     settings: { quality: settings.quality, smoothingAlpha: settings.smoothingAlpha,
-      pinchThreshold: settings.pinchThreshold, pinchReleaseThreshold: settings.pinchReleaseThreshold, targetFps: settings.targetFps },
+      pinchThreshold: settings.pinchThreshold, pinchReleaseThreshold: settings.pinchReleaseThreshold,
+      pinchMetricVersion: settings.pinchMetricVersion, targetFps: settings.targetFps },
     frames: [],
   };
   useTrackingCaptureStore.setState({ status: 'countdown', report: null });
@@ -115,7 +118,8 @@ export function recordTrackingCapture(now: number, inferenceMs: number, pipeline
     pointing: hands.some(hand => !!hand.isPointPressed),
     keyStates: hands.map(hand => ({ hand: hand.handedness, pinching: hand.isPinching,
       down: hand.isKeyDown ?? (hand.isPinching || !!hand.isPointPressed), pressId: hand.pressId ?? 0,
-      reason: hand.articulationReason ?? null })),
+      reason: hand.articulationReason ?? null, pinchDistance: hand.pinchDistance,
+      point: !!hand.isPointPressed, role: hand.screenRole ?? null })),
     selectedRoot: useMusicStore.getState().hoveredRoot,
     selectedQuality: useMusicStore.getState().hoveredQuality,
     playingNotes: [...useMusicStore.getState().playingNotes],
@@ -124,6 +128,7 @@ export function recordTrackingCapture(now: number, inferenceMs: number, pipeline
     fallbackReason: settings.fallbackReason, inferenceWidth: settings.inferenceWidth, inferenceHeight: settings.inferenceHeight,
     smoothingAlpha: settings.smoothingAlpha, pinchThreshold: settings.pinchThreshold,
     pinchReleaseThreshold: settings.pinchReleaseThreshold, targetFps: settings.targetFps,
+    pinchMetricVersion: settings.pinchMetricVersion,
     mirrorCamera: settings.mirrorCamera,
   });
 }
