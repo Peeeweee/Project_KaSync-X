@@ -7,6 +7,9 @@ import { useMusicStore } from '../store/musicState';
 import { useLooperStore } from '../store/looperState';
 import { looperService } from '../looper/recorder';
 import { computeGestures } from '../tracking/gestureRecognizer';
+import { PinchPressTracker } from '../tracking/pinchPressTracker';
+import { measureFingerCurls } from '../tracking/fingerArticulation';
+import { fingerPinchHand } from './fingerPinchHand';
 import type { Landmark } from '@mediapipe/tasks-vision';
 
 // --- TONE.JS MOCK ---
@@ -17,6 +20,7 @@ const { mockAudioNode, mockPart } = vi.hoisted(() => ({
     toDestination: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
     dispose: vi.fn(),
+    getValue: vi.fn(() => -Infinity),
     triggerAttack: vi.fn(),
     triggerAttackRelease: vi.fn(),
     triggerRelease: vi.fn(),
@@ -77,6 +81,7 @@ vi.mock('tone', () => {
     immediate: vi.fn(() => 0),
     Offline: vi.fn(),
     Gain: MockClass,
+    Meter: MockClass,
     Volume: MockClass,
     Destination: mockAudioNode,
     gainToDb: vi.fn((val) => 20 * Math.log10(val)),
@@ -165,6 +170,31 @@ function processAndSetTwoHands(left: Landmark[], right: Landmark[]) {
 
 
 describe('Pipeline E2E Test Harness', () => {
+  it('reopens the live chord voice for every partial-lift finger press at the same wheel position', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
+    const tracker = new PinchPressTracker();
+    mockAudioNode.triggerAttack.mockClear();
+    const publish = (bend: number) => {
+      const { image, world } = fingerPinchHand([bend,.4,.4]);
+      const gesture = computeGestures(image);
+      const key = tracker.update({ ...gesture, fingerCurls: measureFingerCurls(image,720/1280,world) });
+      const data = { ...gesture, ...key, landmarks: image, handedness: 'Right',
+        screenRole: 'left' as const, indexTipPosition: { x: .25, y: .35 } };
+      act(() => useHandStore.getState().setHands([data], [data]));
+    };
+    publish(.4);
+    for (let hit=2;hit<=8;hit++) {
+      publish(1.4);
+      expect(mockAudioNode.triggerAttack, `cut ${hit}`).toHaveBeenCalledTimes(hit-1);
+      expect(mockAudioNode.gain.rampTo).toHaveBeenLastCalledWith(0, .006, 0);
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+      publish(1.1);
+      expect(mockAudioNode.triggerAttack, `resume ${hit}`).toHaveBeenCalledTimes(hit);
+      expect(mockAudioNode.gain.rampTo).toHaveBeenLastCalledWith(1, .006, 0);
+      expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(1);
+    }
+  });
   it('plays seven explicit pinch presses and then a different wheel note', async () => {
     render(<App />);
     await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
