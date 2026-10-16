@@ -36,6 +36,7 @@ export class LooperService {
   private liveHeldNotes: HeldRecording | null = null;
   private liveCurrentNotes: string[] = [];
   private liveVelocity = 0.8;
+  private audioMonitorUsers = 0;
 
   constructor() {
     const { loopBars, beatsPerBar } = useLooperStore.getState();
@@ -165,6 +166,7 @@ export class LooperService {
     if (this.directInstrument) return;
 
     this.directInstrument = new InstrumentService();
+    if (this.audioMonitorUsers > 0) this.directInstrument.startAudioMonitor();
     this.metronomeSynth = new Tone.Synth({
       oscillator: { type: 'sine' },
       envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.02 },
@@ -354,6 +356,24 @@ export class LooperService {
 
   public keepLiveNotesAlive() {
     this.directInstrument?.keepAlive();
+  }
+
+  public getLiveAudioStatus() {
+    return { context: Tone.context.state, muted: Tone.Destination.mute,
+      masterVolume: useLooperStore.getState().masterVolume,
+      instrument: this.directInstrument?.getAudioStatus() ?? null };
+  }
+
+  public monitorLiveAudio() {
+    this.audioMonitorUsers++;
+    this.directInstrument?.startAudioMonitor();
+    let stopped = false;
+    return () => {
+      if (stopped) return;
+      stopped = true;
+      this.audioMonitorUsers--;
+      if (this.audioMonitorUsers === 0) this.directInstrument?.stopAudioMonitor();
+    };
   }
 
   public triggerNote(note: string, velocity: number) {
