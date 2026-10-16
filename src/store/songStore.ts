@@ -137,15 +137,417 @@ const DEMO_SONG: Song = {
   ],
 };
 
+export const DEFAULT_SONGS: Song[] = [
+  DEMO_SONG,
+  {
+    id: 'song-all-or-nothing',
+    name: 'All or Nothing',
+    artist: 'O-Town',
+    defaultKey: 'C',
+    defaultBpm: 68,
+    createdAt: 0,
+    updatedAt: 0,
+    sections: [
+      {
+        id: 'aon-intro',
+        name: 'Intro',
+        colorTag: '#00f0ff',
+        repeatCount: 1,
+        chords: [
+          { root: 'C', quality: 'maj' },
+          { root: 'A', quality: 'min' },
+          { root: 'F', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aon-verse',
+        name: 'Verse',
+        colorTag: '#9D4EDD',
+        repeatCount: 2,
+        chords: [
+          { root: 'C', quality: 'maj' },
+          { root: 'A', quality: 'min' },
+          { root: 'F', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aon-prechorus',
+        name: 'Pre-Chorus',
+        colorTag: '#7B5EA7',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'min' },
+          { root: 'E', quality: 'min' },
+          { root: 'F', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aon-chorus',
+        name: 'Chorus',
+        colorTag: '#F9A826',
+        repeatCount: 2,
+        chords: [
+          { root: 'C', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+          { root: 'A', quality: 'min' },
+          { root: 'F', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aon-bridge',
+        name: 'Bridge',
+        colorTag: '#FF4D6D',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+          { root: 'C', quality: 'maj' },
+          { root: 'A', quality: 'min' },
+          { root: 'D', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aon-final-chorus',
+        name: 'Key Change',
+        colorTag: '#F9A826',
+        key: 'D',
+        repeatCount: 2,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: 'maj' },
+          { root: 'B', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'song-all-of-me',
+    name: 'All of Me',
+    artist: 'John Legend',
+    defaultKey: 'G#',
+    defaultBpm: 63,
+    createdAt: 0,
+    updatedAt: 0,
+    sections: [
+      {
+        id: 'aom-intro',
+        name: 'Intro',
+        colorTag: '#00f0ff',
+        repeatCount: 1,
+        chords: [
+          { root: 'F', quality: 'min' },
+          { root: 'C#', quality: 'maj' },
+          { root: 'G#', quality: 'maj' },
+          { root: 'D#', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aom-verse',
+        name: 'Verse',
+        colorTag: '#9D4EDD',
+        repeatCount: 2,
+        chords: [
+          { root: 'F', quality: 'min' },
+          { root: 'C#', quality: 'maj' },
+          { root: 'G#', quality: 'maj' },
+          { root: 'D#', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aom-prechorus',
+        name: 'Pre-Chorus',
+        colorTag: '#7B5EA7',
+        repeatCount: 1,
+        chords: [
+          { root: 'A#', quality: 'min' },
+          { root: 'G#', quality: 'maj' },
+          { root: 'D#', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aom-chorus',
+        name: 'Chorus',
+        colorTag: '#F9A826',
+        repeatCount: 2,
+        chords: [
+          { root: 'G#', quality: 'maj' },
+          { root: 'F', quality: 'min' },
+          { root: 'A#', quality: 'min' },
+          { root: 'C#', quality: 'maj' },
+          { root: 'D#', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'aom-bridge',
+        name: 'Bridge',
+        colorTag: '#FF4D6D',
+        repeatCount: 1,
+        chords: [
+          { root: 'A#', quality: 'min' },
+          { root: 'G#', quality: 'maj' },
+          { root: 'D#', quality: 'maj' },
+          { root: 'C#', quality: 'maj' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'song-beautiful',
+    name: 'Beautiful',
+    artist: 'Bazzi ft. Camila Cabello',
+    defaultKey: 'D',
+    defaultBpm: 76,
+    createdAt: 0,
+    updatedAt: 0,
+    sections: [
+      {
+        id: 'b-intro',
+        name: 'Intro',
+        colorTag: '#00f0ff',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'F#', quality: '7' },
+          { root: 'B', quality: 'min' },
+          { root: 'A', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+          { root: 'G', quality: 'min' },
+        ],
+      },
+      {
+        id: 'b-verse',
+        name: 'Verse',
+        colorTag: '#9D4EDD',
+        repeatCount: 2,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'F#', quality: '7' },
+          { root: 'B', quality: 'min' },
+          { root: 'A', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+          { root: 'G', quality: 'min' },
+        ],
+      },
+      {
+        id: 'b-prechorus',
+        name: 'Pre-Chorus',
+        colorTag: '#7B5EA7',
+        repeatCount: 1,
+        chords: [
+          { root: 'G', quality: 'maj' },
+          { root: 'A', quality: 'maj' },
+          { root: 'F#', quality: 'min' },
+          { root: 'B', quality: 'min' },
+          { root: 'G', quality: 'min' },
+        ],
+      },
+      {
+        id: 'b-chorus',
+        name: 'Chorus',
+        colorTag: '#F9A826',
+        repeatCount: 2,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'F#', quality: '7' },
+          { root: 'B', quality: 'min' },
+          { root: 'A', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+          { root: 'G', quality: 'min' },
+        ],
+      },
+      {
+        id: 'b-outro',
+        name: 'Outro',
+        colorTag: '#4CAF50',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'F#', quality: '7' },
+          { root: 'B', quality: 'min' },
+          { root: 'G', quality: 'min' },
+          { root: 'D', quality: 'maj' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'song-ghost',
+    name: 'Ghost',
+    artist: 'Justin Bieber',
+    defaultKey: 'D',
+    defaultBpm: 154,
+    createdAt: 0,
+    updatedAt: 0,
+    sections: [
+      {
+        id: 'g-intro',
+        name: 'Intro',
+        colorTag: '#00f0ff',
+        repeatCount: 1,
+        chords: [
+          { root: 'B', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'g-verse',
+        name: 'Verse',
+        colorTag: '#9D4EDD',
+        repeatCount: 2,
+        chords: [
+          { root: 'B', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'g-prechorus',
+        name: 'Pre-Chorus',
+        colorTag: '#7B5EA7',
+        repeatCount: 1,
+        chords: [
+          { root: 'B', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'g-chorus',
+        name: 'Chorus',
+        colorTag: '#F9A826',
+        repeatCount: 2,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: 'maj' },
+          { root: 'B', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'g-bridge',
+        name: 'Bridge',
+        colorTag: '#FF4D6D',
+        repeatCount: 1,
+        chords: [
+          { root: 'E', quality: 'min' },
+          { root: 'G', quality: 'maj' },
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: 'maj' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'song-my-way',
+    name: 'My Way',
+    artist: 'Frank Sinatra',
+    defaultKey: 'D',
+    defaultBpm: 75,
+    createdAt: 0,
+    updatedAt: 0,
+    sections: [
+      {
+        id: 'mw-intro',
+        name: 'Intro',
+        colorTag: '#00f0ff',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'D', quality: 'maj7' },
+          { root: 'D', quality: '7' },
+          { root: 'B', quality: '7' },
+        ],
+      },
+      {
+        id: 'mw-verse',
+        name: 'Verse',
+        colorTag: '#9D4EDD',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'D', quality: 'maj7' },
+          { root: 'D', quality: '7' },
+          { root: 'B', quality: '7' },
+          { root: 'E', quality: 'min' },
+          { root: 'E', quality: 'm7' },
+          { root: 'A', quality: '7' },
+          { root: 'D', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'mw-highway',
+        name: 'Pre-Chorus',
+        colorTag: '#7B5EA7',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'D', quality: '7' },
+          { root: 'G', quality: 'maj' },
+          { root: 'G', quality: 'min' },
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: '7' },
+          { root: 'D', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'mw-chorus',
+        name: 'Chorus',
+        colorTag: '#F9A826',
+        repeatCount: 1,
+        chords: [
+          { root: 'D', quality: 'maj' },
+          { root: 'D', quality: '7' },
+          { root: 'G', quality: 'maj' },
+          { root: 'E', quality: 'min' },
+          { root: 'A', quality: '7' },
+          { root: 'D', quality: 'maj' },
+        ],
+      },
+      {
+        id: 'mw-outro',
+        name: 'Outro',
+        colorTag: '#4CAF50',
+        repeatCount: 1,
+        chords: [
+          { root: 'G', quality: 'maj' },
+          { root: 'G', quality: 'min' },
+          { root: 'D', quality: 'maj' },
+          { root: 'A', quality: '7' },
+          { root: 'D', quality: 'maj' },
+        ],
+      },
+    ],
+  },
+];
+
 function loadSongs(): Song[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Song[];
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Automatically merge missing built-in default songs into the stored library
+        const existingIds = new Set(parsed.map(s => s.id));
+        const missingDefaults = DEFAULT_SONGS.filter(s => !existingIds.has(s.id));
+        if (missingDefaults.length > 0) {
+          const merged = [...parsed, ...missingDefaults];
+          persistSongs(merged);
+          return merged;
+        }
+        return parsed;
+      }
     }
   } catch { /* ignore */ }
-  return [DEMO_SONG];
+  return DEFAULT_SONGS;
 }
 
 function persistSongs(songs: Song[]) {
