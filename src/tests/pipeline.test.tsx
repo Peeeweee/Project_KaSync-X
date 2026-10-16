@@ -25,6 +25,7 @@ const { mockAudioNode, mockPart } = vi.hoisted(() => ({
     chain: vi.fn().mockReturnThis(),
     wet: { value: 0, rampTo: vi.fn() },
     volume: { value: 0, rampTo: vi.fn() },
+    gain: { value: 1, cancelScheduledValues: vi.fn(), rampTo: vi.fn() },
   },
   mockPart: {
     start: vi.fn().mockReturnThis(),
@@ -140,12 +141,7 @@ function processAndSetHand(landmarks: Landmark[], handedness: 'Left' | 'Right') 
   const handObj = {
     handedness,
     landmarks,
-    isPinching: gesture.isPinching,
-    pinchStrength: gesture.pinchStrength,
-    pinchDistance: gesture.pinchDistance,
-    palmPosition: gesture.palmPosition,
-    indexTipPosition: gesture.indexTipPosition,
-    handRotation: gesture.handRotation,
+    ...gesture,
   };
   useHandStore.getState().setHands([handObj], [handObj]);
 }
@@ -156,28 +152,40 @@ function processAndSetTwoHands(left: Landmark[], right: Landmark[]) {
   const leftObj = {
     handedness: 'Left' as const,
     landmarks: left,
-    isPinching: leftGesture.isPinching,
-    pinchStrength: leftGesture.pinchStrength,
-    pinchDistance: leftGesture.pinchDistance,
-    palmPosition: leftGesture.palmPosition,
-    indexTipPosition: leftGesture.indexTipPosition,
-    handRotation: leftGesture.handRotation,
+    ...leftGesture,
   };
   const rightObj = {
     handedness: 'Right' as const,
     landmarks: right,
-    isPinching: rightGesture.isPinching,
-    pinchStrength: rightGesture.pinchStrength,
-    pinchDistance: rightGesture.pinchDistance,
-    palmPosition: rightGesture.palmPosition,
-    indexTipPosition: rightGesture.indexTipPosition,
-    handRotation: rightGesture.handRotation,
+    ...rightGesture,
   };
   useHandStore.getState().setHands([leftObj, rightObj], [leftObj, rightObj]);
 }
 
 
 describe('Pipeline E2E Test Harness', () => {
+  it('plays seven explicit pinch presses and then a different wheel note', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
+    act(() => useMusicStore.getState().setMusicState({ mode: 'Melody', hoveredRoot: null }));
+    mockAudioNode.triggerAttack.mockClear();
+    const publish = (down: boolean, id: number, x = 0.5, y = 0.35) => {
+      const landmarks = createHand(down, x, y);
+      const data = { ...computeGestures(landmarks), landmarks, handedness: 'Right',
+        isPinching: down, isPointPressed: false, isKeyDown: down, pressId: id };
+      act(() => useHandStore.getState().setHands([data], [data]));
+    };
+    for (let id = 1; id <= 7; id++) {
+      publish(true, id);
+      expect(mockAudioNode.triggerAttack, `press ${id}`).toHaveBeenCalledTimes(id);
+      expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
+      publish(false, id);
+      expect(useMusicStore.getState().playingNotes).toEqual([]);
+    }
+    publish(true, 8, 0.35, 0.5);
+    expect(mockAudioNode.triggerAttack).toHaveBeenCalledTimes(8);
+    expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     useHandStore.getState().setHands([], []);
@@ -200,6 +208,25 @@ describe('Pipeline E2E Test Harness', () => {
     }));
     // Clear tutorial state so we don't get blocked
     localStorage.setItem('kasync_tutorial_completed', 'true');
+  });
+
+  it('routes key-down and key-up through wheel selection and the live instrument', async () => {
+    render(<App />);
+    await userEvent.click(screen.getByText(/Initialize Audio Engine/i));
+    act(() => useMusicStore.getState().setMusicState({ mode: 'Melody', hoveredRoot: null }));
+    const landmarks = createHand(false, 0.5, 0.35);
+    landmarks[8] = { ...landmarks[8], z: -0.1 };
+    act(() => processAndSetHand(landmarks, 'Right'));
+    expect(looperService.triggerNote).toHaveBeenCalled();
+
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+    expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
+    act(() => processAndSetHand(createHand(false, 0.5, 0.35), 'Right'));
+    expect(mockAudioNode.gain.rampTo).toHaveBeenLastCalledWith(0, 0.006, 0);
+    const strikes = vi.mocked(looperService.triggerNote).mock.calls.length;
+    act(() => processAndSetHand(createHand(false, 0.5, 0.35), 'Right'));
+    expect(looperService.triggerNote).toHaveBeenCalledTimes(strikes);
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
   });
 
   it('verifies the full pipeline: single pinch note (Melody mode)', async () => {
