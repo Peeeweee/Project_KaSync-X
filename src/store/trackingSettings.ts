@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { EMPTY_TRACKING_METRICS, type TrackingMetricsSnapshot } from '../tracking/trackingMetrics';
 import type { TrackingBackend } from '../tracking/workerProtocol';
+import { DEFAULT_PINCH_ATTACK, DEFAULT_PINCH_RELEASE, PINCH_METRIC_VERSION, loadPinchThresholds, normalizePinchThresholds } from '../tracking/pinchSettings';
 
 export type TrackingQuality = 'auto' | 'audio' | 'performance' | 'balanced' | 'quality';
 
@@ -10,6 +11,7 @@ export interface TrackingPreferences {
   smoothingAlpha: number;
   pinchThreshold: number;
   pinchReleaseThreshold: number;
+  pinchMetricVersion?: number;
   mirrorCamera: boolean;
   showHandOverlay: boolean;
 }
@@ -39,8 +41,9 @@ export const DEFAULT_TRACKING_PREFERENCES: TrackingPreferences = {
   trackingEngine: 'compatible',
   quality: 'auto',
   smoothingAlpha: 0.72,
-  pinchThreshold: 0.32,
-  pinchReleaseThreshold: 0.44,
+  pinchThreshold: DEFAULT_PINCH_ATTACK,
+  pinchReleaseThreshold: DEFAULT_PINCH_RELEASE,
+  pinchMetricVersion: PINCH_METRIC_VERSION,
   mirrorCamera: true,
   showHandOverlay: true,
 };
@@ -49,7 +52,8 @@ function loadPreferences(): TrackingPreferences {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_TRACKING_PREFERENCES;
-    return { ...DEFAULT_TRACKING_PREFERENCES, ...JSON.parse(raw) };
+    const saved = JSON.parse(raw);
+    return { ...DEFAULT_TRACKING_PREFERENCES, ...saved, ...loadPinchThresholds(saved), pinchMetricVersion: PINCH_METRIC_VERSION };
   } catch {
     return DEFAULT_TRACKING_PREFERENCES;
   }
@@ -70,6 +74,7 @@ function selectPreferences(state: TrackingSettingsState): TrackingPreferences {
     smoothingAlpha: state.smoothingAlpha,
     pinchThreshold: state.pinchThreshold,
     pinchReleaseThreshold: state.pinchReleaseThreshold,
+    pinchMetricVersion: PINCH_METRIC_VERSION,
     mirrorCamera: state.mirrorCamera,
     showHandOverlay: state.showHandOverlay,
   };
@@ -102,11 +107,13 @@ export const useTrackingSettingsStore = create<TrackingSettingsState>((set, get)
   inferenceHeight: null,
 
   setPreference: (key, value) => {
-    set({ [key]: value } as Pick<TrackingSettingsState, typeof key>);
+    const next = { ...get(), [key]: value };
+    set({ [key]: value, ...normalizePinchThresholds(next.pinchThreshold, next.pinchReleaseThreshold) });
     persistPreferences(selectPreferences(get()));
   },
   setPreferences: (partial) => {
-    set(partial);
+    const next = { ...get(), ...partial };
+    set({ ...partial, ...normalizePinchThresholds(next.pinchThreshold, next.pinchReleaseThreshold), pinchMetricVersion: PINCH_METRIC_VERSION });
     persistPreferences(selectPreferences(get()));
   },
   setPanelOpen: (open) => set({ isPanelOpen: open }),
