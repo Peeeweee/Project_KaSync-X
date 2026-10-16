@@ -9,6 +9,15 @@ export interface HandData {
   isPinching: boolean;
   pinchStrength: number;
   pinchDistance: number;
+  isPointPressed?: boolean;
+  isKeyDown?: boolean;
+  pressId?: number;
+  pressVelocity?: number;
+  articulationReason?: 'open' | 'pinch-start' | 'navigation' | 'hold' | 'depth-press' | 'depth-release';
+  pointDepth?: number;
+  pointVelocity?: number;
+  isTriggerActive?: boolean;
+  triggerVelocity?: number;
   palmPosition: { x: number; y: number };
   indexTipPosition: { x: number; y: number }; // index fingertip (landmark 8), x already mirrored
   handRotation: number;
@@ -23,29 +32,41 @@ interface HandState {
   setIsTracking: (isTracking: boolean) => void;
 }
 
+let publishingHandFrames = 0;
+const frameListeners = new Set<() => void>();
+
+/** Audio runs after every wheel subscriber has resolved this detection's pitch. */
+export function subscribeToHandFrames(listener: () => void) {
+  frameListeners.add(listener);
+  return () => { frameListeners.delete(listener); };
+}
+
+export function isPublishingHandFrame() {
+  return publishingHandFrames > 0;
+}
+
 export const useHandStore = create<HandState>((set, get) => ({
   rawHands: [],
   smoothedHands: [],
   isTracking: false,
   setHands: (rawHands, smoothedHands) => {
     const prev = get();
-    // Skip the update if hand count is the same and key gesture values are identical.
-    // This prevents no-op re-renders at 20 FPS across all subscribers.
-    if (
-      prev.rawHands.length === rawHands.length &&
-      prev.smoothedHands.length === smoothedHands.length &&
-      smoothedHands.every((h, i) => {
-        const p = prev.smoothedHands[i];
-        return (
-          p &&
-          h.isPinching === p.isPinching &&
-          Math.abs(h.pinchStrength - p.pinchStrength) < 0.005 &&
-          Math.abs(h.indexTipPosition.x - p.indexTipPosition.x) < 0.002 &&
-          Math.abs(h.indexTipPosition.y - p.indexTipPosition.y) < 0.002
-        );
-      })
-    ) return;
-    set({ rawHands, smoothedHands });
+    // Every new detection can contain meaningful depth, rotation, or palm movement,
+    // even when the index tip stays still. Only skip repeated references or empty frames.
+    if (prev.isTracking === (smoothedHands.length > 0) && (
+      (prev.rawHands === rawHands && prev.smoothedHands === smoothedHands) ||
+      (prev.rawHands.length === 0 && rawHands.length === 0 &&
+        prev.smoothedHands.length === 0 && smoothedHands.length === 0)
+    )) return;
+    publishingHandFrames++;
+    try {
+      set({ rawHands, smoothedHands, isTracking: smoothedHands.length > 0 });
+    } finally {
+      publishingHandFrames--;
+    }
+    if (!publishingHandFrames) frameListeners.forEach(listener => listener());
   },
-  setIsTracking: (isTracking) => set({ isTracking }),
+  setIsTracking: (isTracking) => {
+    if (get().isTracking !== isTracking) set({ isTracking });
+  },
 }));
