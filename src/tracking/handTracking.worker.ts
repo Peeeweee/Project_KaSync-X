@@ -62,6 +62,7 @@ function processFrame(image: ImageBitmap, timestamp: number, requestId: number) 
       type: 'RESULTS',
       requestId,
       landmarks: results.landmarks,
+      worldLandmarks: results.worldLandmarks,
       handednesses: results.handednesses,
       inferenceMs: performance.now() - startedAt,
     });
