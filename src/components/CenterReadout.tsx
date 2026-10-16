@@ -15,7 +15,7 @@ export function CenterReadout() {
   const songSections = useSongStore(state => state.songs.find(s => s.id === state.activeSongId)?.sections);
   const songDefaultKey = useSongStore(state => state.songs.find(s => s.id === state.activeSongId)?.defaultKey);
 
-  const hands = useHandStore(state => state.smoothedHands);
+  const hasHands = useHandStore(state => state.smoothedHands.length > 0);
 
   const isPlaying = useMusicStore(state => state.playingNotes.length > 0);
   const displayText = useMemo(() => {
@@ -26,7 +26,7 @@ export function CenterReadout() {
       } else if (hoveredRoot) {
         text = formatChordName(hoveredRoot, 'maj', hoveredBass, currentKey);
       } else {
-        text = hands.length > 0 ? 'HOVER' : 'READY';
+        text = hasHands ? 'HOVER' : 'READY';
       }
     } else if (mode === 'Song') {
       if (hoveredRoot) {
@@ -34,17 +34,17 @@ export function CenterReadout() {
         const keyToUse = songSections?.[activeSectionIndex]?.key ?? songDefaultKey ?? currentKey;
         text = formatChordName(hoveredRoot, quality, hoveredBass, keyToUse);
       } else {
-        text = hands.length > 0 ? 'HOVER' : 'READY';
+        text = hasHands ? 'HOVER' : 'READY';
       }
     } else {
       if (hoveredRoot) {
         text = formatChordName(hoveredRoot, '', hoveredBass, currentKey);
       } else {
-        text = hands.length > 0 ? 'HOVER' : 'READY';
+        text = hasHands ? 'HOVER' : 'READY';
       }
     }
     return text;
-  }, [mode, hands, hoveredRoot, hoveredQuality, hoveredBass, currentKey, activeSectionIndex, songSections, songDefaultKey]);
+  }, [mode, hasHands, hoveredRoot, hoveredQuality, hoveredBass, currentKey, activeSectionIndex, songSections, songDefaultKey]);
 
   return (
     <div
@@ -80,7 +80,7 @@ export function CenterReadout() {
           <span className={`text-[7px] font-mono tracking-widest uppercase transition-opacity duration-200 mt-0.5 ${
             isPlaying ? 'text-[#00f0ff] font-bold animate-pulse' : 'text-white/40'
           }`}>
-            {isPlaying ? 'STRIKE • CHOKE' : hands.length > 0 ? (hoveredRoot ? 'POINT IN • PINCH' : 'HOVER NOTE') : 'RAISE HAND'}
+            {isPlaying ? 'HOLD FOR LONGER NOTES' : hasHands ? (hoveredRoot ? 'PINCH TO PLAY' : 'HOVER NOTE') : 'RAISE HAND'}
           </span>
         </div>
       </div>
