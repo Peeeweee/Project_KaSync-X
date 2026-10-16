@@ -1,3 +1,4 @@
+import { runBackendBenchmark } from './runBackendBenchmark';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import type { HandTrackingWorkerRequest, HandTrackingWorkerResponse, TrackingBackend } from './workerProtocol';
 
@@ -16,8 +17,8 @@ async function createLandmarker(
   const sharedOptions = {
     runningMode: 'VIDEO' as const,
     numHands: 2,
-    minHandDetectionConfidence: 0.6,
-    minHandPresenceConfidence: 0.6,
+    minHandDetectionConfidence: 0.5,
+    minHandPresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,
   };
 
@@ -52,19 +53,11 @@ function processFrame(image: ImageBitmap, timestamp: number, requestId: number) 
   const startedAt = performance.now();
   try {
     if (!handLandmarker) throw new Error('Hand tracker is not initialized.');
-    if (timestamp <= lastVideoTime) {
-      respond({
-        type: 'RESULTS',
-        requestId,
-        landmarks: [],
-        handednesses: [],
-        inferenceMs: 0,
-      });
-      return;
-    }
+    // Enforce strictly monotonic timestamps for MediaPipe VIDEO mode without dropping frames
+    const effectiveTimestamp = timestamp > lastVideoTime ? timestamp : lastVideoTime + 1;
 
-    const results = handLandmarker.detectForVideo(image, timestamp);
-    lastVideoTime = timestamp;
+    const results = handLandmarker.detectForVideo(image, effectiveTimestamp);
+    lastVideoTime = effectiveTimestamp;
     respond({
       type: 'RESULTS',
       requestId,
@@ -82,6 +75,9 @@ function processFrame(image: ImageBitmap, timestamp: number, requestId: number) 
 self.onmessage = (event: MessageEvent<HandTrackingWorkerRequest>) => {
   const message = event.data;
   switch (message.type) {
+    case 'BENCHMARK':
+      void runBackendBenchmark(message, respond);
+      break;
     case 'INIT':
       void initialize(message.wasmRoot, message.modelAssetPath);
       break;
