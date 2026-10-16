@@ -60,6 +60,7 @@ export function CameraFeed() {
           onClick={() => setPanelOpen(!isPanelOpen)}
           aria-label="Open hand tracking settings"
           aria-expanded={isPanelOpen}
+          aria-controls="kasync-tracking-settings"
           className="border border-[var(--color-secondary)]/30 px-2 py-1 font-display font-bold text-[9px] uppercase tracking-widest text-[var(--color-secondary)] hover:bg-[var(--color-secondary)]/10"
           style={{ fontSize: '9px' }}
           title="Hand Tracking Settings"
