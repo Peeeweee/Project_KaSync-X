@@ -2,25 +2,16 @@ import * as Tone from 'tone';
 import { useMusicStore } from '../store/musicState';
 import type { InstrumentType, EffectsState } from '../store/musicState';
 
-// ─────────────────────────────────────────────────────────────
-//  InstrumentService — voice-exhaustion-proof audio engine
-//
-//  Design principle: triggerAttackRelease (TAR) with HOLD_DURATION.
-//  Voices are ALWAYS automatically freed after HOLD_DURATION seconds.
-//  While a chord is held by the user, we re-fire TAR every RENEW_INTERVAL
-//  so the sound is continuous. On release we stop renewing — the current
-//  TAR burst fades out on its own.
-//
-//  This is bulletproof vs. hand-tracking dropout, MediaPipe
-//  setTimeout violations, and any other reason releaseChord might
-//  fail to fire cleanly. No orphaned voices. Ever.
-// ─────────────────────────────────────────────────────────────
+// Live voices use immediate attack/release, with a watchdog for lost release events.
+// A gate after the effects provides a click-free choke that stays closed until a new attack.
 
 const FALLBACK_RELEASE_MS = 8000;
 
 export class InstrumentService {
   private synth: Tone.PolySynth;
   private limiter: Tone.Limiter;
+  private outputGate: Tone.Gain;
+  private voiceRelease = 0.22;
   private currentEffectsState: EffectsState | null = null;
   private currentNotes: string[] = [];
   private isPlaying: boolean = false;
@@ -39,7 +30,8 @@ export class InstrumentService {
   private unsubscribeMusicStore: () => void;
 
   constructor() {
-    this.limiter = new Tone.Limiter(-3).toDestination(); // -3dBFS ceiling keeps peaks pristine without clipping
+    this.limiter = new Tone.Limiter(-3).toDestination();
+    this.outputGate = new Tone.Gain(1).connect(this.limiter); // -3dBFS ceiling keeps peaks pristine without clipping
 
     // Initialize Effects (reverb is lazy to avoid blocking on startup)
     this.chorus     = new Tone.Chorus(4, 2.5, 0.4).start();
@@ -52,7 +44,7 @@ export class InstrumentService {
     this.delay.wet.value      = 0;
 
     // Build the direct effect chain
-    this.chorus.chain(this.bitcrusher, this.delay, this.limiter);
+    this.chorus.chain(this.bitcrusher, this.delay, this.outputGate);
 
     this.synth = this.buildSynth(useMusicStore.getState().currentInstrument);
 
@@ -72,6 +64,7 @@ export class InstrumentService {
       this.synth.dispose();
     }
 
+    this.voiceRelease = { Subtractive: 0.22, FM: 0.28, 'Electric Piano': 0.35, Pad: 0.55 }[type];
     let synth: Tone.PolySynth;
 
     switch (type) {
@@ -118,6 +111,10 @@ export class InstrumentService {
     }, FALLBACK_RELEASE_MS);
   }
 
+  public keepAlive() {
+    if (this.isPlaying) this.resetWatchdog();
+  }
+
   private switchInstrument(newInstrument: InstrumentType) {
     const wasPlaying = this.isPlaying;
     const notes = [...this.currentNotes];
@@ -158,6 +155,8 @@ export class InstrumentService {
     }
 
     const eventTime = Tone.immediate();
+    this.outputGate.gain.cancelScheduledValues(eventTime);
+    this.outputGate.gain.rampTo(1, 0.006, eventTime);
     const notesToRelease = this.currentNotes.filter(note => !notes.includes(note));
     const notesToAttack = notes.filter(note => !this.currentNotes.includes(note));
     if (notesToRelease.length > 0) this.synth.triggerRelease(notesToRelease, eventTime);
@@ -171,28 +170,35 @@ export class InstrumentService {
     this.resetWatchdog();
   }
 
-  public releaseChord(gradual: boolean = false) {
+  public releaseChord(gradual: boolean = false, choke: boolean = false) {
     void gradual;
-    if (this.sustainEnabled && this.isPlaying) {
+    if (this.sustainEnabled && this.isPlaying && !choke) {
       this.pendingSustainRelease = true;
       return;
     }
-    this.releaseVoices();
+    this.releaseVoices(choke);
   }
 
-  private releaseVoices() {
+  private releaseVoices(choke: boolean = false) {
     if (this.watchdogTimer) {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
     }
     
-    if (this.isPlaying) {
-      if (this.currentNotes.length > 0) {
-        this.synth.triggerRelease(this.currentNotes, Tone.immediate());
-      }
-      this.synth.releaseAll(Tone.immediate());
+    const eventTime = Tone.immediate();
+    if (choke) {
+      // Gate the entire live signal, including delay/reverb tails. Never reopen on a timer.
+      this.outputGate.gain.cancelScheduledValues(eventTime);
+      this.outputGate.gain.rampTo(0, 0.006, eventTime);
     }
-    
+    if (this.isPlaying) {
+      // Shorten release before scheduling note-offs so old pad voices cannot return on retrigger.
+      if (choke) this.synth.set({ envelope: { release: 0.006 } });
+      if (this.currentNotes.length > 0) this.synth.triggerRelease(this.currentNotes, eventTime);
+      this.synth.releaseAll(eventTime);
+      if (choke) this.synth.set({ envelope: { release: this.voiceRelease } });
+    }
+
     this.isPlaying    = false;
     this.currentNotes = [];
     this.pendingSustainRelease = false;
@@ -215,7 +221,7 @@ export class InstrumentService {
       this.reverb = new Tone.Reverb({ decay: 2.0, preDelay: 0.05 });
       this.reverb.wet.value = 0;
       this.delay.disconnect();
-      this.delay.chain(this.reverb, this.limiter);
+      this.delay.chain(this.reverb, this.outputGate);
     }
     return this.reverb;
   }
@@ -243,8 +249,8 @@ export class InstrumentService {
     this.triggerChord([note], velocity);
   }
 
-  public releaseNote(gradual: boolean = false) {
-    this.releaseChord(gradual);
+  public releaseNote(gradual: boolean = false, choke: boolean = false) {
+    this.releaseChord(gradual, choke);
   }
 
   public connectRecorder(recorder: Tone.Recorder) {
@@ -260,6 +266,7 @@ export class InstrumentService {
     this.bitcrusher.dispose();
     this.delay.dispose();
     this.reverb?.dispose();
+    this.outputGate.dispose();
     this.limiter.dispose();
   }
 }
