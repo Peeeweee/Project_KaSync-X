@@ -493,8 +493,118 @@ textarea:focus-visible,
 }
 
 .kasync-song-hud {
-  top: clamp(5.25rem, 11vh, 7.5rem);
-  max-width: min(46rem, calc(100vw - 2rem));
+  top: clamp(4.5rem, 7vh, 6rem);
+  width: min(48rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0;
+}
+
+.kasync-song-console,
+.kasync-song-sections {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(157, 78, 221, 0.28);
+  border-radius: 0.75rem;
+  background: rgba(8, 9, 26, 0.94);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.kasync-song-console {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+}
+
+.kasync-song-identity, .kasync-song-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+.kasync-song-identity { flex: 1; }
+.kasync-song-actions { flex-shrink: 0; }
+.kasync-song-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 0.375rem;
+  background: rgba(0, 240, 255, 0.08);
+  color: var(--color-secondary);
+  font: 700 0.5rem/1.25 var(--font-mono, monospace);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.kasync-song-badge > span { width: 0.3rem; height: 0.3rem; border-radius: 50%; background: currentColor; }
+.kasync-song-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e5e7ef;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.kasync-song-shortcuts { display: inline-flex; align-items: center; gap: 0.25rem; color: #8892a8; font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.kasync-song-shortcuts kbd { padding: 0.15rem 0.25rem; border: 1px solid #ffffff20; border-radius: 0.25rem; }
+.kasync-song-edit, .kasync-song-section {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 2rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.4375rem;
+  font-size: 0.625rem;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms, border-color 150ms, color 150ms;
+}
+.kasync-song-edit { color: var(--color-secondary); background: rgba(0,240,255,0.08); border-color: rgba(0,240,255,0.35); }
+.kasync-song-edit:hover { background: rgba(0,240,255,0.16); border-color: var(--color-secondary); }
+.kasync-song-sections {
+  position: relative;
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.375rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #526078 transparent;
+  scroll-padding-inline: 0.375rem;
+}
+.kasync-song-section { flex: 1 0 auto; color: #a0a8bc; background: rgba(255,255,255,0.025); border-color: rgba(255,255,255,0.06); }
+.kasync-song-section:hover { color: #fff; background: rgba(255,255,255,0.07); }
+.kasync-song-section[aria-current="step"] { color: #fff; border-color: var(--section-color); background: color-mix(in srgb, var(--section-color) 16%, #08091a); box-shadow: inset 0 -2px var(--section-color); }
+.kasync-song-edit:focus-visible, .kasync-song-section:focus-visible { outline: 2px solid var(--color-secondary); outline-offset: -3px; }
+@media (max-width: 600px) {
+  .kasync-song-shortcuts { display: none; }
+  .kasync-song-console { gap: 0.375rem; }
+  .kasync-song-identity { gap: 0.375rem; }
+  .kasync-song-badge { font-size: 0.4375rem; padding-inline: 0.3rem; }
+  .kasync-song-edit { padding-inline: 0.5rem; }
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 .kasync-session-trigger {
@@ -580,15 +690,6 @@ textarea:focus-visible,
   .kasync-song-hud {
     top: calc(4rem + min(28vh, 14rem) + 0.5rem);
     width: calc(100vw - 1rem);
-  }
-
-  .kasync-song-hud > :first-child {
-    display: none;
-  }
-
-  .kasync-song-hud > :nth-child(2) {
-    max-width: 100%;
-    overflow-x: auto;
   }
 
   .kasync-center-readout {
@@ -700,4 +801,55 @@ textarea:focus-visible,
   .kasync-center-readout {
     scale: 0.52;
   }
+}
+
+/* Portaled above the camera/stage stacking contexts; the header stays reachable. */
+.kasync-tracking-panel {
+  position: fixed;
+  z-index: 80;
+  left: max(1rem, env(safe-area-inset-left));
+  right: auto;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid rgba(47, 217, 196, 0.4);
+  border-radius: 0.75rem;
+  background: #070912;
+  color: white;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65), 0 0 20px rgba(47, 217, 196, 0.12);
+  isolation: isolate;
+}
+.kasync-tracking-header {
+  flex: 0 0 auto;
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.kasync-tracking-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #526078 transparent;
+  padding: 1rem;
+}
+
+/* Camera/Track controls use the free lower-left corner on every breakpoint. */
+.kasync-camera-controls {
+  left: var(--kasync-edge) !important;
+  right: auto !important;
+  bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+}
+.kasync-tracking-panel {
+  bottom: max(3.5rem, calc(env(safe-area-inset-bottom) + 2.5rem));
+  max-height: calc(100vh - 4.5rem);
+  max-height: calc(100dvh - 4.5rem);
+}
+
+@media (max-width: 900px) {
+  .kasync-camera-controls { bottom: 13rem !important; }
 }
