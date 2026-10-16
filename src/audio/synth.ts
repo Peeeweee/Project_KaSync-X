@@ -1,4 +1,6 @@
 import * as Tone from 'tone';
+import { effectDialSettings, useEffectDialStore } from '../store/effectDial';
+import { queueReverbDecay } from './effectDial';
 import { useMusicStore } from '../store/musicState';
 import type { InstrumentType, EffectsState } from '../store/musicState';
 
@@ -28,6 +30,7 @@ export class InstrumentService {
 
   // AudioContext watchdog — resumes if browser auto-suspends it
   private unsubscribeMusicStore: () => void;
+  private unsubscribeEffectDial: () => void;
 
   constructor() {
     this.limiter = new Tone.Limiter(-3).toDestination();
@@ -53,6 +56,10 @@ export class InstrumentService {
       if (state.currentInstrument !== prevState.currentInstrument) {
         this.switchInstrument(state.currentInstrument);
       }
+    });
+    this.unsubscribeEffectDial = useEffectDialStore.subscribe(() => {
+      const fx = this.currentEffectsState;
+      if (fx && (fx.reverb || fx.delay || fx.chorus || fx.bitcrusher)) this.setEffects(fx);
     });
   }
 
@@ -218,7 +225,7 @@ export class InstrumentService {
 
   private getOrCreateReverb(): Tone.Reverb {
     if (!this.reverb) {
-      this.reverb = new Tone.Reverb({ decay: 2.0, preDelay: 0.05 });
+      this.reverb = new Tone.Reverb({ decay: effectDialSettings().decay, preDelay: 0.05 });
       this.reverb.wet.value = 0;
       this.delay.disconnect();
       this.delay.chain(this.reverb, this.outputGate);
@@ -231,12 +238,15 @@ export class InstrumentService {
     const wasSustaining = this.sustainEnabled;
     this.sustainEnabled = state.sustain;
     const rampTime = 0.1;
-    this.chorus.wet.rampTo(state.chorus      ? 0.5 : 0, rampTime);
-    this.bitcrusher.wet.rampTo(state.bitcrusher ? 0.7 : 0, rampTime);
-    this.delay.wet.rampTo(state.delay       ? 0.4 : 0, rampTime);
+    const dial = effectDialSettings();
+    this.chorus.wet.rampTo(state.chorus ? Math.min(1, 0.5 * dial.amount) : 0, rampTime);
+    this.bitcrusher.wet.rampTo(state.bitcrusher ? Math.min(1, 0.7 * dial.amount) : 0, rampTime);
+    this.delay.wet.rampTo(state.delay ? Math.min(1, 0.4 * dial.amount) : 0, rampTime);
+    this.delay.feedback.rampTo(dial.feedback, rampTime);
     if (state.reverb) {
       const rev = this.getOrCreateReverb();
-      rev.wet.rampTo(0.6, rampTime);
+      rev.wet.rampTo(Math.min(1, 0.6 * dial.amount), rampTime);
+      queueReverbDecay(rev, dial.decay);
     } else if (this.reverb) {
       this.reverb.wet.rampTo(0, rampTime);
     }
@@ -260,6 +270,7 @@ export class InstrumentService {
   public dispose() {
     if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
     this.unsubscribeMusicStore();
+    this.unsubscribeEffectDial();
     this.synth.releaseAll();
     this.synth.dispose();
     this.chorus.dispose();
