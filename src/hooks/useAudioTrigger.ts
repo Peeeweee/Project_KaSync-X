@@ -1,166 +1,149 @@
-/**
- * useAudioTrigger — direct Zustand-subscription based audio trigger.
- *
- * PERFORMANCE: Subscribes directly to hand/music stores, bypassing React's
- * render cycle entirely. This eliminates the ~16ms frame delay that the old
- * useEffect approach added between gesture detection and audio playback.
- *
- * FX BUG FIX: Tracks the last toggled effect by NAME (not just a boolean),
- * so sliding between effects while pinching correctly fires each new zone
- * exactly once, instead of stacking.
- */
 import { useEffect, useRef } from 'react';
-import { useHandStore } from '../store/handState';
+import { isPublishingHandFrame, subscribeToHandFrames, useHandStore, type HandData } from '../store/handState';
 import { useMusicStore, type EffectsState } from '../store/musicState';
 import { useLooperStore } from '../store/looperState';
 import { looperService } from '../looper/recorder';
 import { buildChord } from '../music/chords';
 import { getScreenHands } from '../tracking/handUtils';
+import { useTrackingSettingsStore } from '../store/trackingSettings';
 
+/** Live key-down/up events bypass React rendering and preserve performed durations. */
 export function useAudioTrigger(audioStarted: boolean) {
-  // Keep audioStarted in a ref so the subscription closure always reads current value
-  const audioStartedRef = useRef(audioStarted);
+  const started = useRef(audioStarted);
+  useEffect(() => { started.current = audioStarted; }, [audioStarted]);
   useEffect(() => {
-    audioStartedRef.current = audioStarted;
-  }, [audioStarted]);
-
-  useEffect(() => {
-    // ── State tracking (plain objects, not React state — no re-renders) ──
-    const lastChordKey  = { current: '' };
-    const releaseTimer  = { current: null as ReturnType<typeof setTimeout> | null };
-    const lastFxEffect  = { current: null as string | null }; // tracks last effect zone pinched
-    const fxBaseline = { current: null as EffectsState | null };
-
+    let owner: string | null = null;
+    let lastKey = '';
+    let previousMode = useMusicStore.getState().mode;
+    const previous = new Map<string, { down: boolean; id: number }>();
+    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastFx: string | null = null;
+    let fxBaseline: EffectsState | null = null;
+    const identity = (h: HandData) => h.handedness === 'Unknown' ? h.screenRole ?? h.handedness : h.handedness;
+    const down = (h: HandData) => h.isKeyDown ?? (h.isPinching || !!h.isPointPressed);
     const clearRelease = () => {
-      if (releaseTimer.current) {
-        clearTimeout(releaseTimer.current);
-        releaseTimer.current = null;
+      if (releaseTimer !== null) clearTimeout(releaseTimer);
+      releaseTimer = null;
+    };
+    const release = () => {
+      owner = null;
+      lastKey = '';
+      if (previousMode === 'Melody') looperService.releaseNote(false, true);
+      else looperService.releaseChord(false, true);
+      useMusicStore.getState().setMusicState({ playingNotes: [] });
+    };
+    const restoreFx = () => {
+      if (lastFx && fxBaseline) {
+        const store = useLooperStore.getState();
+        const track = store.tracks.find(t => t.isArmed);
+        if (track) store.setTrackProperty(track.id, 'effects', fxBaseline);
       }
+      lastFx = null;
+      fxBaseline = null;
     };
-
-    const scheduleRelease = (isMelody: boolean, noHands: boolean) => {
-      if (lastChordKey.current === '' || releaseTimer.current) return;
-      releaseTimer.current = setTimeout(() => {
-        lastChordKey.current = '';
-        if (isMelody) {
-          looperService.releaseNote(noHands);
-        } else {
-          looperService.releaseChord(noHands);
-        }
-        useMusicStore.getState().setMusicState({ playingNotes: [] });
-        releaseTimer.current = null;
-      }, noHands ? 90 : 45); // Brief dropout guard without making deliberate note changes feel sticky.
-    };
-
-    // ── Core trigger function — called on every hand/music state change ──
-    const trigger = () => {
-      if (!audioStartedRef.current) return;
-
+    const trigger = (freshFrame = false) => {
+      if (!started.current) return;
       const hands = useHandStore.getState().smoothedHands;
       const { leftHand, rightHand } = getScreenHands(hands);
       const music = useMusicStore.getState();
       const { mode, hoveredRoot, hoveredQuality, hoveredBass, hoveredEffect } = music;
-
-      // ── CHORD MODE ───────────────────────────────────────────────────────────
-      if (mode === 'Chord') {
-        const leftPinch  = leftHand?.isPinching ?? false;
-        const rightPinch = rightHand?.isPinching ?? false;
-        const isPinching = leftPinch || rightPinch;
-
-        // Either hand pinching (or both) triggers the chord!
-        if (isPinching && hoveredRoot) {
-          clearRelease();
-          const quality = hoveredQuality || 'maj';
-          const notes = buildChord(hoveredRoot, quality, hoveredBass);
-          const key   = notes.join(',');
-          if (key !== lastChordKey.current) {
-            lastChordKey.current = key;
-            const pinchVal = Math.max(leftHand?.pinchStrength ?? 0.8, rightHand?.pinchStrength ?? 0.8);
-            looperService.triggerChord(notes, pinchVal);
-            music.setMusicState({ playingNotes: notes });
-          }
-        } else {
-          scheduleRelease(false, hands.length === 0);
-        }
-
-      // ── SONG MODE ────────────────────────────────────────────────────────────
-      } else if (mode === 'Song') {
-        const leftPinch  = leftHand?.isPinching  ?? false;
-        const rightPinch = rightHand?.isPinching ?? false;
-
-        // LEFT HAND → play chord
-        if (leftPinch && hoveredRoot) {
-          clearRelease();
-          const quality = hoveredQuality || 'maj';
-          const notes = buildChord(hoveredRoot, quality, hoveredBass);
-          const key   = notes.join(',');
-          if (key !== lastChordKey.current) {
-            lastChordKey.current = key;
-            looperService.triggerChord(notes, leftHand?.pinchStrength ?? 0.8);
-            music.setMusicState({ playingNotes: notes });
-          }
-        } else {
-          scheduleRelease(false, hands.length === 0);
-        }
-
-        // RIGHT HAND → Momentary FX (strictly non-stacking radio behavior)
-        if (rightPinch && hoveredEffect) {
-          if (hoveredEffect !== lastFxEffect.current) {
-            const store = useLooperStore.getState();
-            const armedTrack = store.tracks.find(t => t.isArmed);
-            if (armedTrack) {
-              if (!lastFxEffect.current) fxBaseline.current = { ...armedTrack.effects };
-              // Guaranteed mutual exclusivity: only the active effect is true
-              const newEffects: EffectsState = {
-                reverb: false,
-                delay: false,
-                chorus: false,
-                bitcrusher: false,
-                sustain: false,
-                [hoveredEffect]: true,
-              };
-              store.setTrackProperty(armedTrack.id, 'effects', newEffects);
-            }
-            lastFxEffect.current = hoveredEffect;
-          }
-        } else if (!rightPinch && lastFxEffect.current) {
-          // Pinch released — restore the persistent FX state from before the gesture.
+      if (mode !== previousMode) {
+        previousMode = mode;
+        clearRelease();
+        previous.clear();
+        restoreFx();
+        // Reset state before the synchronous music-store notification.
+        owner = null;
+        lastKey = '';
+        looperService.releaseChord(false, true);
+      }
+      if (mode === 'Song') {
+        const active = rightHand && (rightHand.isTriggerActive ?? (rightHand.isPinching || rightHand.isPointPressed));
+        if (active && hoveredEffect && hoveredEffect !== lastFx) {
           const store = useLooperStore.getState();
-          const armedTrack = store.tracks.find(t => t.isArmed);
-          if (armedTrack && fxBaseline.current) store.setTrackProperty(armedTrack.id, 'effects', fxBaseline.current);
-          lastFxEffect.current = null;
-          fxBaseline.current = null;
-        }
-
-      // ── MELODY MODE ──────────────────────────────────────────────────────────
-      } else {
-        const h = leftHand ?? rightHand ?? hands[0];
-        if (h?.isPinching && hoveredRoot) {
-          clearRelease();
-          const noteLow  = `${hoveredRoot}4`;
-          const noteHigh = `${hoveredRoot}5`;
-          const key = `${noteLow},${noteHigh}`;
-          if (lastChordKey.current !== key) {
-            lastChordKey.current = key;
-            looperService.triggerNote(noteLow, h?.pinchStrength ?? 0.8);
-            music.setMusicState({ playingNotes: [noteLow] });
+          const track = store.tracks.find(t => t.isArmed);
+          if (track) {
+            if (!lastFx) fxBaseline = { ...track.effects };
+            store.setTrackProperty(track.id, 'effects', {
+              reverb: false, delay: false, chorus: false, bitcrusher: false, sustain: false,
+              [hoveredEffect]: true,
+            });
           }
-        } else {
-          scheduleRelease(true, hands.length === 0);
+          lastFx = hoveredEffect;
+        } else if (!active) restoreFx();
+      }
+      const playingHands = mode === 'Chord' ? hands : mode === 'Song'
+        ? [leftHand ?? (hands.length === 1 ? hands[0] : null)].filter((h): h is HandData => !!h)
+        : [leftHand ?? rightHand ?? hands[0]].filter((h): h is HandData => !!h);
+      if (owner !== null && !playingHands.some(h => identity(h) === owner)) {
+        // Treat loss of the owning hand as a dropout even while a second hand
+        // remains visible. Do not steal or choke the voice during this guard.
+        const fps = useTrackingSettingsStore.getState().actualTrackingFps;
+        const guardMs = hands.length > 0 && fps && fps > 0 ? Math.min(250, Math.max(90, 2000 / fps)) : 90;
+        if (releaseTimer === null) releaseTimer = setTimeout(() => {
+          releaseTimer = null;
+          previous.clear();
+          release();
+        }, guardMs);
+        return;
+      }
+      const fresh = playingHands.find(h => {
+        const prev = previous.get(identity(h));
+        return down(h) && (!prev?.down || (h.pressId ?? 0) > prev.id);
+      });
+      // Wheel selection may arrive after the hand event. Keep key-down pending
+      // until a pitch exists, and commit before publishing playingNotes.
+      for (const h of playingHands) {
+        if (hoveredRoot || !down(h)) previous.set(identity(h), { down: down(h), id: h.pressId ?? 0 });
+      }
+      if (hands.length > 0) {
+        const visible = new Set(playingHands.map(identity));
+        for (const key of previous.keys()) if (!visible.has(key)) previous.delete(key);
+      }
+      const current = fresh ?? playingHands.find(h => identity(h) === owner);
+      if (current && down(current)) {
+        clearRelease();
+        // Wheel gaps during a held gesture are navigation, not key-up.
+        if (!hoveredRoot) {
+          if (freshFrame && owner !== null) looperService.keepLiveNotesAlive();
+          return;
+        }
+        const notes = mode === 'Melody' ? [`${hoveredRoot}4`]
+          : buildChord(hoveredRoot, hoveredQuality || 'maj', hoveredBass);
+        const key = notes.join(',');
+        if (fresh || key !== lastKey) {
+          owner = identity(current);
+          lastKey = key;
+          if (fresh) looperService.releaseChord(false, true);
+          const velocity = current.isPinching ? current.pressVelocity ?? current.pinchStrength
+            : current.pointVelocity ?? current.triggerVelocity ?? 0.8;
+          if (mode === 'Melody') looperService.triggerNote(notes[0], velocity);
+          else looperService.triggerChord(notes, velocity);
+          music.setMusicState({ playingNotes: notes });
+        } else if (freshFrame) {
+          // Fresh camera detections confirm a deliberate long hold; retain the
+          // watchdog only as protection against genuinely lost input.
+          looperService.keepLiveNotesAlive();
+        }
+      } else if (owner !== null) {
+        if (hands.length > 0) {
+          clearRelease();
+          release();
+        } else if (releaseTimer === null) {
+          releaseTimer = setTimeout(() => {
+            releaseTimer = null;
+            previous.clear();
+            release();
+          }, 90);
         }
       }
     };
-
-    // Subscribe directly to both stores — no React render cycle overhead
-    const unsubHands = useHandStore.subscribe(trigger);
-    const unsubMusic = useMusicStore.subscribe(trigger);
-
+    const unsubHands = subscribeToHandFrames(() => trigger(true));
+    const unsubMusic = useMusicStore.subscribe(() => {
+      if (!isPublishingHandFrame()) trigger();
+    });
     return () => {
-      unsubHands();
-      unsubMusic();
-      clearRelease();
-      looperService.releaseChord();
-      useMusicStore.getState().setMusicState({ playingNotes: [] });
+      unsubHands(); unsubMusic(); clearRelease(); restoreFx(); release();
     };
-  }, []); // Empty deps — refs handle all mutable state, subscriptions self-manage
+  }, []);
 }
