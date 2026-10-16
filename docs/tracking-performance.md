@@ -134,3 +134,58 @@ The full App regression reproduced stale-pitch attacks: on the second explicit p
 Hand state now offers a synchronous completed-frame subscription. Audio processes a detection only after normal hand subscribers (including note wheels) finish. Music notifications during hand publication are not independently interpreted as new audio input. There is no next-frame wait or timeout. UI-driven pitch changes outside detection still trigger normally.
 
 Regression coverage includes seven pinch close/open cycles at the same pitch followed by another wheel note through App, plus Chord/Song/Melody checks with a wheel subscriber registered after audio. An isolated browser OfflineAudioContext render of the real InstrumentService also produced nonzero audio for all seven direct attacks (peaks approximately 0.32), including a pitch change. This proves the isolated renderer can repeat; it does not establish that the user's live-camera failure is fully resolved.
+
+## Demo review: pinch release ownership (2026-10-16)
+
+Reviewed the supplied 49.43-second recording, including two-hand Chord playing and one-hand Melody playing. The user confirmed releases mean separating thumb and index, not closed-pinch push/pull. The recorded audio contains sustained passages (approximately 14.9-21.96 and 24.38-31.32 seconds above 0.003 RMS). Video highlights and audio alone do not reveal the original landmark classifier state.
+
+Two routing defects were corrected: a fresh quality-hand trigger could steal chord voice ownership, and OR-combining pinch and point key states could let a point signal hold a voice after its initiating pinch opened. In a two-hand chord pair, only the note hand articulates; a lone hand can still play. A voice retains its initiating gesture source for release. Another detector cannot sustain that voice, and a fresh pinch can immediately re-strike it.
+
+Regression tests cover quality-hand takeover, transition from solo hand to note/quality pair, and seven pinch close/open cycles with a continuously active competing point signal plus pitch changes, in all three modes. These validate routing after classification, not whether each physical opening is correctly classified in the user's camera feed. No threshold or model change was made.
+
+## Recognition audit correction (2026-10-16)
+
+See articulation-audit.md for the full scan, reproduction, and limits. The gesture recognizer now converts Y into the same image-width units as X/Z before measuring pinch and palm distances. Default onset remains 0.32; default release is 0.36 rather than 0.44. Contact calibration now keeps a narrow hysteresis band rather than requiring a return toward the fully spread-hand sample. Old mixed-unit calibration is versioned out of local preferences and restored projects while retaining unrelated settings. New calibration requires the same single handedness in both steps.
+
+Track displays per-hand pinch gaps/classification, thresholds, and audio-request notes; numeric captures include metric version and per-hand gap/point/role. New landmark-to-audio tests cover seven small close/open cycles and held navigation in all three modes. The screen-recording replay was too incomplete to establish live recall, and no FPS improvement is claimed.
+
+## Responsiveness and expressive repeat pass (2026-10-16)
+
+After the user confirmed basic pinch articulation works, the next pass targets avoidable latency and expression while retaining that recognition contract.
+
+- Frame budgeting now advances a planned deadline rather than restarting a full interval after each late callback. A synthetic 25ms callback stream with a 30 FPS budget schedules 30 detections/sec; the former elapsed-since-last-start check schedules about 20. This is a scheduler test, not a live FPS measurement. Duplicate decoded frames and concurrent inference remain excluded.
+- Position EMA uses camera-sample elapsed time, preserving its configured feel at 30 FPS while avoiding extra old-position retention at low FPS. Pinch edges continue to use raw landmarks. With alpha 0.5 at 10 FPS, the old blend retained half the old position after a step; the new blend retains one eighth.
+- Camera sample times, rather than inference completion jitter, measure normalized finger-closing rate. Quick closures produce stronger attack velocity; gentle closures produce softer attacks. Velocity is fixed during the held note. Camera-depth movement does not trigger articulation. Long gaps (>250ms) do not create a speed accent.
+- The live instrument no longer flattens low velocities at a 0.6 floor. The current mapping preserves more soft/accent separation while keeping a nonzero audible floor.
+- Numeric runtime diagnostics publish at most twice per second; raw capture remains per detection. Removed unused main-thread request timers, whole-store QualityWheel subscriptions, and per-detection CenterReadout hand-array subscriptions.
+- Existing pinch calibration and default thresholds are preserved in this pass. The same model, main-thread direct-video compatibility path, confidence settings, and input resolution remain in use. No new performance or gesture mode is introduced.
+
+These changes do not claim a measured end-to-end speed multiplier. Fast close/open movements that occur entirely between model observations can still be missed; current live FPS and pipeline measurements remain necessary. Pad's slow attack remains part of its instrument character.
+
+## Responsiveness experiment rollback (2026-10-16)
+
+Following a live report that articulation was not functioning, restored the pre-experiment camera pacing, fixed per-frame EMA, pinch attack velocity, and live gain mapping. This rollback retains the verified coordinate-unit, release-threshold, calibration migration, and audio-source ownership fixes. Simple UI selector reductions and clearer labels remain. The preceding responsiveness section describes an experimental pass that is no longer active.
+
+The follow-up clarified that pinch sustains sound but a pressing motion while pinched does not articulate. Current recognition only emits key-down/up from thumb/index close/open edges. Closed-contact pressing/lifting is not implemented; reverting pacing cannot add it. A physical gesture clarification is pending before selecting a new recognition signal, since previous camera-distance articulation caused false releases during navigation.
+
+### Closed-pinch press/lift follow-up
+
+Whole-hand forward/back strokes now use the existing model's image and world palm landmarks to estimate relative axial translation. Both inference paths carry world landmarks; only five palm joints are fit per hand, without another model call. Navigation/rotation/invalid fits rebase without creating audio edges. See `articulation-audit.md` for gesture semantics, thresholds and verification limits. Recognition still depends on measured camera inference cadence; this update is not a demonstrated FPS improvement.
+
+### Three-finger articulation replaces depth strokes
+
+The live key tracker now uses middle/ring/little joint bends while thumb/index stays pinched. Joint geometry is read from the existing raw model result before display smoothing; whole-hand approach/retreat does not trigger articulation. Per-finger rest capture and hysteresis are observation-driven, with no additional inference or duration timer. See `articulation-audit.md` for gesture semantics and validation limits.
+
+### Efficiency follow-up after the gesture was confirmed working
+
+The live baseline reported by the user was 9.5 FPS, pipeline average 74.0 ms, p95 141.0 ms and capture average 0.0 ms. This is approximately 105 ms between observations. Pipeline duration is a major limit; algorithm microbenchmarks are not a claim of equivalent live FPS improvement.
+
+Changes preserve all finger thresholds, pinch thresholds, rest capture, model weights, delegate selection and input resolution:
+
+- Share the palm plane between the three finger measurements and avoid per-finger temporary vectors/validation arrays. A local Node microbenchmark over 48 image/world poses produced exactly equal results (maximum absolute difference zero). Median geometry cost was 1.14 microseconds per hand before versus 0.68 after, about 1.68x for this calculation only.
+- Publish diagnostic runtime changes only when the existing 500 ms metrics snapshot is ready. Previously inference-latency notifications still ran every frame even when metrics were not due. Hand frames, finger events, capture samples and audio remain unthrottled.
+- Pace accepted fresh camera frames against deadlines. At a synthetic 30 FPS camera with a 24 FPS budget, the former elapsed-time tolerance rounded the cadence down to 15 FPS; the new test retains about 24. Stalls drop overdue slots rather than queueing catch-up work.
+- In worker mode, remember only the latest decoded frame while busy and start it when the result returns, subject to the same cadence and one-in-flight guard. This removes waiting for an additional camera callback. It does not automatically select worker mode or change the compatible main-thread engine.
+- Skip rebuilding unchanged held chords while keeping every fresh finger press, release, pitch change and watchdog keep-alive.
+
+Tests verify the worker's latest-frame behavior, duplicate-frame protection and an actual finger-press edge arriving before the next diagnostic refresh. A new live capture is still needed to quantify camera FPS and latency changes on the user's device. At 74 ms average pipeline time, reducing model/inference time remains necessary for substantially higher overall tracking rates.
