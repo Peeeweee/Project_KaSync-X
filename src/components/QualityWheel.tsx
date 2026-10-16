@@ -3,11 +3,12 @@ import { useHandStore } from '../store/handState';
 import { useMusicStore } from '../store/musicState';
 import { CHORD_QUALITIES } from '../music/chords';
 import { getWedgePath } from './RootWheel';
+import { isVolumeHand } from '../store/volumeGesture';
 import { getScreenHands } from '../tracking/handUtils';
 
 export function QualityWheel() {
   const mode = useMusicStore((state) => state.mode);
-  const { showExtendedQualities } = useMusicStore();
+  const showExtendedQualities = useMusicStore(state => state.showExtendedQualities);
   const hoveredQuality = useMusicStore((state) => state.hoveredQuality);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,6 +47,7 @@ export function QualityWheel() {
       const hands = state.smoothedHands;
       const { rightHand } = getScreenHands(hands);
       const hand = rightHand ?? hands[0];
+      if (hand && isVolumeHand(hand)) return;
 
       if (!state.isTracking || !hand) {
         if (containerRef.current) containerRef.current.style.transform = 'translate(-50%, -50%)';
