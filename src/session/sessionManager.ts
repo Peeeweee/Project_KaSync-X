@@ -10,6 +10,7 @@ import {
   type LoopBars,
 } from '../looper/timing';
 import type { Track, TrackEvent } from '../looper/trackModel';
+import { PINCH_METRIC_VERSION, loadPinchThresholds } from '../tracking/pinchSettings';
 import { useLooperStore } from '../store/looperState';
 import { useMusicStore, type EffectsState, type InstrumentMode, type InstrumentType } from '../store/musicState';
 import { useSessionStore } from '../store/sessionState';
@@ -285,6 +286,7 @@ export function captureSession(name = useSessionStore.getState().projectName): K
       smoothingAlpha: tracking.smoothingAlpha,
       pinchThreshold: tracking.pinchThreshold,
       pinchReleaseThreshold: tracking.pinchReleaseThreshold,
+      pinchMetricVersion: PINCH_METRIC_VERSION,
       mirrorCamera: tracking.mirrorCamera,
       showHandOverlay: tracking.showHandOverlay,
     },
@@ -329,11 +331,7 @@ export function parseSessionText(raw: string): KasyncSessionDocument {
   const quality = qualities.includes(tracking.quality as TrackingQuality)
     ? tracking.quality as TrackingQuality
     : 'auto';
-  const pinchThreshold = number(tracking.pinchThreshold, 0.32, 0.1, 0.8);
-  const pinchReleaseThreshold = Math.max(
-    pinchThreshold + 0.03,
-    number(tracking.pinchReleaseThreshold, 0.44, 0.13, 0.9),
-  );
+  const { pinchThreshold, pinchReleaseThreshold } = loadPinchThresholds(tracking);
 
   return {
     kind: 'kasync-session',
@@ -375,6 +373,7 @@ export function parseSessionText(raw: string): KasyncSessionDocument {
       smoothingAlpha: number(tracking.smoothingAlpha, 0.5, 0.2, 0.85),
       pinchThreshold,
       pinchReleaseThreshold: Math.min(0.9, pinchReleaseThreshold),
+      pinchMetricVersion: PINCH_METRIC_VERSION,
       mirrorCamera: bool(tracking.mirrorCamera, true),
       showHandOverlay: bool(tracking.showHandOverlay, true),
     },
