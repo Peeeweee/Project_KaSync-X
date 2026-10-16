@@ -6,7 +6,7 @@ interface PinchSample {
   fingerCurls?: FingerCurls;
 }
 
-/** Pinch holds the pitch; the three free fingers perform key-down/up events. */
+/** Pinch sustains; a free-finger bend mutes until all pressed fingers lift. */
 export class PinchPressTracker {
   private down = false;
   private id = 0;
@@ -28,9 +28,9 @@ export class PinchPressTracker {
       const frame = this.fingers.update(sample.fingerCurls);
       articulatingFingers = frame.fingers;
       if (frame.strikes > 0) {
-        this.down = true; this.id++; this.velocity = sample.pinchStrength; reason = 'finger-press';
+        this.down = false; reason = 'finger-press';
       } else if (frame.lifts > 0 && frame.fingers.length === 0) {
-        this.down = false; reason = 'finger-lift';
+        this.down = true; this.id++; this.velocity = sample.pinchStrength; reason = 'finger-lift';
       }
     }
     return { isKeyDown: this.down, pressId: this.id, pressVelocity: this.velocity,
