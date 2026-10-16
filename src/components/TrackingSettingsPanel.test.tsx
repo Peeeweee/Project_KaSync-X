@@ -1,8 +1,14 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TrackingSettingsPanel } from './TrackingSettingsPanel';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { useHandStore, type HandData } from '../store/handState';
+
+vi.mock('../looper/recorder', () => ({ looperService: {
+  monitorLiveAudio: vi.fn(() => vi.fn()),
+  getLiveAudioStatus: vi.fn(() => ({ context:'running', muted:false, masterVolume:.8,
+    instrument:{ attacks:7, activeVoices:4, gate:1, playing:true, dryDb:-12.5, outputDb:-Infinity } })),
+} }));
 
 describe('tracking settings overlay', () => {
   it('calibrates from the same single hand and keeps the release close to contact', () => {
@@ -27,6 +33,9 @@ describe('tracking settings overlay', () => {
       fireEvent.click(screen.getByRole('button', { name: /2 · Pinch/i }));
       expect(useTrackingSettingsStore.getState().pinchReleaseThreshold).toBeLessThan(0.3);
       expect(screen.getByText(/Audio request:/)).toBeTruthy();
+      expect(screen.getByText('Engine: running · Master: 80%')).toBeTruthy();
+      expect(screen.getByText('Synth attacks: 7 · Voices: 4 · Gate: 100%')).toBeTruthy();
+      expect(screen.getByText('Signal: synth -12.5 dB · after FX silent')).toBeTruthy();
     } finally {
       view.unmount();
       useTrackingSettingsStore.getState().setPreferences({ pinchThreshold: original.pinchThreshold,
