@@ -39,8 +39,10 @@ describe('tracking capture', () => {
     expect(report.summary.labelledAgreementPercent).toBe(50);
     expect(report.frames[0]).not.toHaveProperty('landmarks');
     expect(report.frames[0].matchesExpected).toBe(true);
+    expect(report.frames[0].pinchMetricVersion).toBe(2);
+    expect(report.settings.pinchMetricVersion).toBe(2);
     expect(report.frames[0].keyStates).toEqual([{ hand: 'Left', pinching: false,
-      down: false, pressId: 0, reason: null }]);
+      down: false, pressId: 0, reason: null, pinchDistance: 1, point: false, role: null }]);
     expect(report.frames[1].matchesExpected).toBe(false);
     expect(useTrackingCaptureStore.getState().status).toBe('idle');
   });
