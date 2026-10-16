@@ -34,29 +34,64 @@ export function measureFingerCurls(image: Landmark[], aspect = 1, world?: Landma
   return result;
 }
 
-/** A relative rest pose accommodates naturally bent fingers during a pinch. */
+// Require a deliberate initial bend; subsequent down/up strokes share the same
+// travel so returning to a just-released position always plays again.
+const PRESS_TRAVEL = .14;
+const LIFT_TRAVEL = .085;
+
+/** Follow each finger's stroke so a lift can rearm at a naturally bent rest pose. */
 export class FingerArticulationTracker {
   private rest: FingerCurls = [null,null,null];
+  private peak: FingerCurls = [null,null,null];
+  private previousHeld: FingerCurls = [null,null,null];
   private down = [false,false,false];
+  private rearmed = [false,false,false];
   reset(curls?: FingerCurls) {
     this.rest = curls ? [...curls] : [null,null,null];
+    this.peak = [null,null,null];
+    this.previousHeld = [null,null,null];
     this.down = [false,false,false];
+    this.rearmed = [false,false,false];
   }
   update(curls: FingerCurls) {
     let strikes = 0, lifts = 0;
     for (let i=0;i<3;i++) {
       const curl = curls[i];
       if (curl === null || !Number.isFinite(curl)) {
-        if (!this.down[i]) this.rest[i] = null;
+        this.previousHeld[i] = null;
+        if (!this.down[i]) {
+          this.rest[i] = null;
+        }
         continue;
       }
       const rest = this.rest[i];
       if (rest === null) { this.rest[i] = curl; continue; }
       if (this.down[i]) {
-        if (curl-rest < .055) { this.down[i] = false; lifts++; }
+        // A deeper held position needs two agreeing observations. One high
+        // estimate must not make the normal held pose look like a release.
+        // Initial attacks and lifts from the established peak remain immediate.
+        const confirmed = Math.min(this.previousHeld[i] ?? this.peak[i] ?? curl,curl);
+        const peak = Math.max(this.peak[i] ?? curl,confirmed);
+        this.previousHeld[i] = curl;
+        this.peak[i] = peak;
+        if (peak-curl >= LIFT_TRAVEL) {
+          this.down[i] = false;
+          // The next press starts from this lift, not an old, fully straight pose.
+          this.rest[i] = curl;
+          this.peak[i] = null;
+          this.previousHeld[i] = null;
+          this.rearmed[i] = true;
+          lifts++;
+        }
       } else {
         this.rest[i] = Math.min(rest,curl);
-        if (curl-this.rest[i]! > .14) { this.down[i] = true; strikes++; }
+        const travel = this.rearmed[i] ? LIFT_TRAVEL : PRESS_TRAVEL;
+        if (curl-this.rest[i]! >= travel) {
+          this.down[i] = true;
+          this.peak[i] = curl;
+          this.previousHeld[i] = curl;
+          strikes++;
+        }
       }
     }
     return { strikes, lifts, fingers: this.down.map((down,i) => down ? ARTICULATION_FINGERS[i] : null)
