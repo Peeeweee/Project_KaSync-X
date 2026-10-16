@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { HandData } from '../store/handState';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { useMusicStore } from '../store/musicState';
+import { useLiveNoteReleaseStore } from './liveNoteRelease';
 
 export type ExpectedGesture = 'unlabelled' | 'no-hands' | 'open' | 'pinch' | 'point';
 export interface CaptureFrame {
@@ -26,10 +27,12 @@ export interface CaptureFrame {
   targetFps: number;
   mirrorCamera: boolean;
   keyStates?: { hand: string; pinching: boolean; down: boolean; pressId: number; reason: string | null;
-    pinchDistance: number; point: boolean; role: string | null }[];
+    pinchDistance: number; point: boolean; role: string | null;
+    fingerCurls?: HandData['fingerCurls'] | null; articulatingFingers?: string[] }[];
   selectedRoot?: string | null;
   selectedQuality?: string | null;
   playingNotes?: string[];
+  lastRelease?: ReturnType<typeof useLiveNoteReleaseStore.getState>['lastRelease'];
 }
 export interface CaptureReport {
   schemaVersion: 1;
@@ -119,10 +122,13 @@ export function recordTrackingCapture(now: number, inferenceMs: number, pipeline
     keyStates: hands.map(hand => ({ hand: hand.handedness, pinching: hand.isPinching,
       down: hand.isKeyDown ?? (hand.isPinching || !!hand.isPointPressed), pressId: hand.pressId ?? 0,
       reason: hand.articulationReason ?? null, pinchDistance: hand.pinchDistance,
-      point: !!hand.isPointPressed, role: hand.screenRole ?? null })),
+      point: !!hand.isPointPressed, role: hand.screenRole ?? null,
+      fingerCurls: hand.fingerCurls ? [...hand.fingerCurls] : null,
+      articulatingFingers: [...(hand.articulatingFingers ?? [])] })),
     selectedRoot: useMusicStore.getState().hoveredRoot,
     selectedQuality: useMusicStore.getState().hoveredQuality,
     playingNotes: [...useMusicStore.getState().playingNotes],
+    lastRelease: useLiveNoteReleaseStore.getState().lastRelease,
     matchesExpected: matchesExpectedGesture(session.expected, hands),
     backend: settings.backend, quality: settings.quality, trackingEngine: settings.trackingEngine,
     fallbackReason: settings.fallbackReason, inferenceWidth: settings.inferenceWidth, inferenceHeight: settings.inferenceHeight,
