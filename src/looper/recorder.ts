@@ -345,19 +345,23 @@ export class LooperService {
     }
   }
 
-  public releaseChord(gradual: boolean = false) {
-    this.directInstrument?.releaseChord(gradual);
+  public releaseChord(gradual: boolean = false, choke: boolean = false) {
+    this.directInstrument?.releaseChord(gradual, choke);
     if (this.liveCurrentNotes.length > 0) midiManager.sendNoteOff(this.liveCurrentNotes);
     this.finalizeHeldRecording();
     this.liveCurrentNotes = [];
+  }
+
+  public keepLiveNotesAlive() {
+    this.directInstrument?.keepAlive();
   }
 
   public triggerNote(note: string, velocity: number) {
     this.triggerChord([note], velocity);
   }
 
-  public releaseNote(gradual: boolean = false) {
-    this.releaseChord(gradual);
+  public releaseNote(gradual: boolean = false, choke: boolean = false) {
+    this.releaseChord(gradual, choke);
   }
 
   public setMasterVolume(db: number, rampTime: number = 0) {
