@@ -4,9 +4,10 @@ import type { Category, Landmark } from '@mediapipe/tasks-vision';
 import { useHandTracking } from './useHandTracking';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { useHandStore } from '../store/handState';
+import { fingerPinchHand } from '../tests/fingerPinchHand';
 
 const { mainDetect, mainClose } = vi.hoisted(() => ({
-  mainDetect: vi.fn<(input: unknown, timestamp: number) => { landmarks: Landmark[][]; handednesses: Category[][] }>().mockReturnValue({ landmarks: [], handednesses: [] }), mainClose: vi.fn(),
+  mainDetect: vi.fn<(input: unknown, timestamp: number) => { landmarks: Landmark[][]; handednesses: Category[][]; worldLandmarks?: Landmark[][] }>().mockReturnValue({ landmarks: [], handednesses: [] }), mainClose: vi.fn(),
 }));
 vi.mock('@mediapipe/tasks-vision', () => ({
   FilesetResolver: { forVisionTasks: vi.fn().mockResolvedValue({}) },
@@ -40,6 +41,47 @@ afterEach(() => {
 });
 
 describe('camera frame scheduling', () => {
+  it('resumes the worker with only the newest decoded frame and publishes every finger edge before diagnostic refresh', async () => {
+    let now=100;
+    vi.spyOn(performance,'now').mockImplementation(()=>now);
+    vi.stubGlobal('Worker',TrackingWorkerMock);
+    const capture=vi.fn().mockResolvedValue({close:vi.fn(),width:460,height:259});
+    vi.stubGlobal('createImageBitmap',capture);
+    vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue({getTracks:()=>[{stop:vi.fn()}]})}});
+    const video=document.createElement('video');
+    Object.defineProperties(video,{videoWidth:{value:1280},videoHeight:{value:720},readyState:{value:4},
+      paused:{value:false},requestVideoFrameCallback:{value:undefined}});
+    video.play=vi.fn().mockResolvedValue(undefined);
+    let frame:FrameRequestCallback=()=>{};
+    vi.stubGlobal('requestAnimationFrame',vi.fn((cb:FrameRequestCallback)=>{frame=cb;return 1;}));
+    vi.stubGlobal('cancelAnimationFrame',vi.fn());
+    let reports=0;
+    const unsub=useTrackingSettingsStore.subscribe((state,previous)=>{if(state.inferenceLatencyMs!==previous.inferenceLatencyMs) reports++;});
+    const videoRef={current:video};
+    const hook=renderHook(()=>useHandTracking(videoRef));
+    try {
+      await waitFor(()=>expect(TrackingWorkerMock.instance.postMessage).toHaveBeenCalledWith(expect.objectContaining({type:'INIT'})));
+      await act(async()=>TrackingWorkerMock.instance.receive({type:'INIT_DONE',backend:'worker-gpu'}));
+      await act(async()=>frame(100));
+      video.currentTime=1/30;await act(async()=>frame(134));
+      expect(capture).toHaveBeenCalledTimes(1);
+      const processCalls=()=>TrackingWorkerMock.instance.postMessage.mock.calls.filter(([m])=>m.type==='PROCESS');
+      const result=(index:number,bend:number,ms:number)=>{
+        const p=fingerPinchHand([bend,0,0]);
+        return {type:'RESULTS',requestId:processCalls()[index][0].requestId,inferenceMs:ms,
+          landmarks:[p.image],worldLandmarks:[p.world],handednesses:[[{categoryName:'Left',score:1,index:0,displayName:''}]]};
+      };
+      now=140;await act(async()=>TrackingWorkerMock.instance.receive(result(0,0,5)));
+      expect(capture).toHaveBeenCalledTimes(2);
+      video.currentTime=2/30;await act(async()=>frame(168));
+      video.currentTime=3/30;await act(async()=>frame(201));
+      now=210;await act(async()=>TrackingWorkerMock.instance.receive(result(1,1,6)));
+      expect(capture).toHaveBeenCalledTimes(3);
+      expect(processCalls()[2][0].timestamp).toBe(210);
+      expect(useHandStore.getState().smoothedHands[0]).toMatchObject({pressId:2,articulationReason:'finger-press'});
+      expect(reports).toBe(1);
+    } finally { unsub();hook.unmount(); }
+  });
   it('avoids repeated inference on unchanged video frames in the rAF fallback', async () => {
     vi.stubGlobal('Worker', TrackingWorkerMock);
     const image = { close: vi.fn(), width: 460, height: 345 };
@@ -65,7 +107,7 @@ describe('camera frame scheduling', () => {
     const videoRef = { current: video };
     const hook = renderHook(() => useHandTracking(videoRef));
     try {
-      await waitFor(() => expect(TrackingWorkerMock.instance).toBeDefined());
+      await waitFor(() => expect(TrackingWorkerMock.instance.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'INIT' })));
       await act(async () => {
         TrackingWorkerMock.instance.receive({ type: 'INIT_DONE', backend: 'worker-gpu' });
       });
@@ -189,7 +231,7 @@ describe('compatible live tracking recovery', () => {
         if (time === 200) expect(useHandStore.getState().smoothedHands[0].isPinching).toBe(false);
       }
       // Keep thumb/index closed while moving the whole pinch back and forward.
-      // Camera approach and retreat must never manufacture key-up or re-strikes.
+      // Without world geometry, apparent scale alone cannot manufacture edges.
       let firstPressId = 0;
       for (const [time, scale, expected] of [[600, 1, null], [700, 1, null],
         [800, 1, true], [900, 1.06, true], [1000, 1, true], [1100, 1.06, true]] as const) {
@@ -208,6 +250,21 @@ describe('compatible live tracking recovery', () => {
         }
         if (time === 800) firstPressId = hand.pressId!;
         if (time >= 900) expect(hand.pressId).toBe(firstPressId);
+      }
+      // Pair each hand's world pose before sorting detections by handedness.
+      // Only the Left middle finger bends, and must articulate despite heavy EMA.
+      const label = (categoryName: string) => [{ categoryName, displayName: '', index: 0, score: 1 }];
+      for (const [time, bend, down, reason] of [[1200, 0, true, 'pinch-start'],
+        [1300, 1, true, 'finger-press'], [1400, 0, false, 'finger-lift']] as const) {
+        const left = fingerPinchHand([bend,0,0]);
+        const right = fingerPinchHand([0,0,0],0.7,0.1);
+        mainDetect.mockReturnValue({ landmarks: [right.image, left.image],
+          worldLandmarks: [right.world, left.world], handednesses: [label('Right'), label('Left')] });
+        video.currentTime = time / 1000;
+        await act(async () => { nextFrame(time); });
+        const hands = useHandStore.getState().smoothedHands;
+        expect(hands.find(h => h.handedness === 'Left')).toMatchObject({ isPinching: true, isKeyDown: down, articulationReason: reason });
+        expect(hands.find(h => h.handedness === 'Right')).toMatchObject({ isKeyDown: true, pressId: 1 });
       }
       act(() => useTrackingSettingsStore.getState().restartTracking());
       await waitFor(() => expect(mainClose).toHaveBeenCalledTimes(1));
