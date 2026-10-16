@@ -16,6 +16,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { SessionPanel } from './components/SessionPanel';
 import { ArrangementPanel } from './components/ArrangementPanel';
 import { CenterReadout } from './components/CenterReadout';
+import { VolumeRing } from './components/VolumeRing';
 import { looperService } from './looper/recorder';
 import { useMusicStore, INSTRUMENT_ORDER } from './store/musicState';
 import { useSongStore } from './store/songStore';
@@ -155,6 +156,18 @@ function App() {
   // ── Audio trigger (direct store subscription — bypasses React render cycle) ──
   useAudioTrigger(audioStarted);
 
+  // Volume reaches the audio graph directly, without waiting for a React render.
+  useEffect(() => {
+    const apply = (volume: number) => {
+      Tone.Destination.mute = volume === 0;
+      if (volume > 0) Tone.Destination.volume.rampTo(20 * Math.log10(volume), 0.06);
+    };
+    apply(useLooperStore.getState().masterVolume);
+    return useLooperStore.subscribe((state, previous) => {
+      if (state.masterVolume !== previous.masterVolume) apply(state.masterVolume);
+    });
+  }, []);
+
   // Ensure AudioContext is unlocked and resumed on ANY user interaction (click, tap, keypress)
   useEffect(() => {
     const resumeAudio = async () => {
@@ -195,6 +208,8 @@ function App() {
             </>
           )}
           {mode === 'Song' && <SongPalette />}
+          <VolumeRing />
+          <VolumeRing kind="effects" />
           <SongPanel />
         </>
       )}
