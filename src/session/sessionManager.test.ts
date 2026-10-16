@@ -51,6 +51,19 @@ describe('Kasync session documents', () => {
     expect(() => parseSessionText(JSON.stringify({ kind: 'kasync-session', version: 1 }))).toThrow(/incomplete/i);
   });
 
+  it('does not restore obsolete pinch calibration from an autosaved or imported session', () => {
+    const legacy = captureSession('Legacy calibration');
+    delete legacy.tracking.pinchMetricVersion;
+    legacy.tracking.pinchThreshold = 0.55;
+    legacy.tracking.pinchReleaseThreshold = 0.75;
+    legacy.tracking.smoothingAlpha = 0.6;
+    const restored = parseSessionText(JSON.stringify(legacy));
+    expect(restored.tracking.pinchThreshold).toBe(0.32);
+    expect(restored.tracking.pinchReleaseThreshold).toBe(0.36);
+    expect(restored.tracking.smoothingAlpha).toBe(0.6);
+    expect(restored.tracking.pinchMetricVersion).toBe(2);
+  });
+
   it('clamps imported values to safe musical and tracking ranges', () => {
     const unsafe = captureSession('Unsafe');
     unsafe.looper.bpm = 999;
