@@ -72,7 +72,7 @@ export function InstrumentPanel() {
       aria-label="Instrument Selector"
     >
       {/* Panel Header */}
-      <div className="pointer-events-auto flex items-center justify-between bg-black/80 backdrop-blur-3xl border-l-2 border-t border-r border-b border-t-[var(--color-metal-dark)] border-r-[var(--color-metal-dark)] border-b-[var(--color-secondary)] border-l-[var(--color-metal-light)] px-2 py-1 shadow-[0_5px_15px_rgba(0,240,255,0.1)] rounded-t-md">
+      <div className="kasync-rail-heading pointer-events-auto">
         <span className="text-[10px] text-[var(--color-metal-light)] font-display font-bold uppercase tracking-widest whitespace-nowrap" style={{ fontSize: '10px' }}>
           Sound <span className="text-[var(--color-secondary)]">Engine</span>
         </span>
@@ -95,7 +95,7 @@ export function InstrumentPanel() {
               aria-pressed={isActive}
               onClick={() => handleSelect(inst.type)}
               className={[
-                "pointer-events-auto relative overflow-hidden flex items-center gap-2",
+                "kasync-instrument-card pointer-events-auto relative overflow-hidden flex items-center gap-2",
                 "border-l-2 border rounded-r-md px-2 py-1",
                 "text-left transition-all duration-200 group",
                 isActive
@@ -142,7 +142,7 @@ export function InstrumentPanel() {
                 >
                   {inst.label}
                 </span>
-                <span className="text-[8px] text-[var(--color-metal-light)]/50 tracking-wide truncate">
+                <span className="kasync-instrument-description text-[9px] tracking-wide truncate">
                   {inst.flavor}
                 </span>
               </span>
