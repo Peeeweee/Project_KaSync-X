@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InstrumentService } from './synth';
 import { useEffectDialStore } from '../store/effectDial';
+import { TrackAudioLayer } from './trackAudioLayer';
 
 const { nodes } = vi.hoisted(() => ({ nodes: [] as Array<{
   kind: string;
   wet: { rampTo: ReturnType<typeof vi.fn> };
   feedback: { rampTo: ReturnType<typeof vi.fn> };
   gain: { cancelScheduledValues: ReturnType<typeof vi.fn>; rampTo: ReturnType<typeof vi.fn> };
+  volume: { value: number; rampTo: ReturnType<typeof vi.fn> };
   chain: ReturnType<typeof vi.fn>;
   set: ReturnType<typeof vi.fn>;
   triggerRelease: ReturnType<typeof vi.fn>;
@@ -20,7 +22,7 @@ vi.mock('tone', () => {
   const constructor = (kind: string) => function () {
     const node = {
       kind, gain: { cancelScheduledValues: vi.fn(), rampTo: vi.fn() },
-      wet: { value: 0, rampTo: vi.fn() }, feedback: { rampTo: vi.fn() }, volume: { value: 0 },
+      wet: { value: 0, rampTo: vi.fn() }, feedback: { rampTo: vi.fn() }, volume: { value: 0, rampTo: vi.fn() },
       connect: vi.fn().mockReturnThis(), chain: vi.fn().mockReturnThis(),
       toDestination: vi.fn().mockReturnThis(), start: vi.fn().mockReturnThis(),
       set: vi.fn(), dispose: vi.fn(), disconnect: vi.fn(), releaseAll: vi.fn(),
@@ -31,9 +33,10 @@ vi.mock('tone', () => {
     return node;
   };
   return Object.fromEntries([
-    ...['Gain', 'Limiter', 'Chorus', 'BitCrusher', 'FeedbackDelay', 'Reverb', 'PolySynth', 'Synth', 'Meter']
+    ...['Gain', 'Volume', 'Limiter', 'Chorus', 'BitCrusher', 'FeedbackDelay', 'Reverb', 'PolySynth', 'Synth', 'Meter']
       .map(kind => [kind, constructor(kind)]),
     ['immediate', () => 10], ['context', { state: 'running' }],
+    ['now', () => 10.1], ['gainToDb', (gain: number) => 20 * Math.log10(gain)],
   ]);
 });
 
@@ -67,9 +70,15 @@ describe('live instrument choke', () => {
       const delay = nodes.find(n => n.kind === 'FeedbackDelay')!;
       useEffectDialStore.setState({ level: .75 });
       expect(delay.wet.rampTo.mock.lastCall?.[0]).toBeCloseTo(.6);
-      expect(delay.feedback.rampTo).toHaveBeenLastCalledWith(.35, .1);
+      expect(delay.feedback.rampTo).toHaveBeenLastCalledWith(.35, .1, 10);
+      expect(delay.feedback.rampTo).toHaveBeenCalledTimes(1);
+      const wetCalls = delay.wet.rampTo.mock.calls.length;
       useEffectDialStore.setState({ settledLevel: .75 });
-      expect(delay.feedback.rampTo).toHaveBeenLastCalledWith(.475, .1);
+      expect(delay.feedback.rampTo).toHaveBeenLastCalledWith(.475, .1, 10);
+      expect(delay.wet.rampTo).toHaveBeenCalledTimes(wetCalls);
+      instrument.triggerNote('C4', .8);
+      instrument.triggerNote('D4', .8);
+      expect(delay.wet.rampTo).toHaveBeenCalledTimes(wetCalls);
       expect(nodes.filter(n => n.kind === 'PolySynth')).toHaveLength(1);
       expect(nodes.filter(n => n.kind === 'Reverb')).toHaveLength(0);
     } finally { instrument.dispose(); useEffectDialStore.setState({ level: .5, settledLevel: .5 }); }
@@ -111,4 +120,20 @@ describe('live instrument choke', () => {
     expect(synth.triggerAttack).toHaveBeenCalledTimes(2);
     instrument.dispose();
   });
+});
+
+it('does not restart unchanged playback FX and starts track volume ramps immediately', () => {
+  const layer = new TrackAudioLayer(0);
+  try {
+    const effects = { sustain: false, reverb: false, delay: true, chorus: false, bitcrusher: false };
+    layer.setVolume(.8);
+    for (let i = 0; i < 20; i++) layer.setEffects(effects);
+    const volume = nodes.find(n => n.kind === 'Volume')!.volume;
+    const delay = nodes.find(n => n.kind === 'FeedbackDelay')!;
+    expect(volume.rampTo).toHaveBeenCalledTimes(1);
+    expect(volume.rampTo).toHaveBeenLastCalledWith(20 * Math.log10(.8), .1, 10);
+    expect(delay.wet.rampTo).toHaveBeenCalledTimes(1);
+    layer.setVolume(.4);
+    expect(volume.rampTo).toHaveBeenCalledTimes(2);
+  } finally { layer.dispose(); }
 });
