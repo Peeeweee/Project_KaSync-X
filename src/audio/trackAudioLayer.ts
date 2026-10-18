@@ -1,3 +1,4 @@
+import { rampLiveParameter } from './transitions';
 import * as Tone from 'tone';
 import { effectDialSettings, useEffectDialStore } from '../store/effectDial';
 import { queueReverbDecay } from './effectDial';
@@ -119,24 +120,25 @@ export class TrackAudioLayer {
     // Smoothly ramp wet values to avoid clicking
     const rampTime = 0.1;
     const dial = effectDialSettings();
-    this.chorus.wet.rampTo(state.chorus ? Math.min(1, 0.6 * dial.amount) : 0, rampTime);
-    this.bitcrusher.wet.rampTo(state.bitcrusher ? Math.min(1, 0.8 * dial.amount) : 0, rampTime);
-    this.delay.wet.rampTo(state.delay ? Math.min(1, 0.5 * dial.amount) : 0, rampTime);
-    this.delay.feedback.rampTo(dial.feedback, rampTime);
+    rampLiveParameter(this.chorus.wet, state.chorus ? Math.min(1, 0.6 * dial.amount) : 0, rampTime);
+    rampLiveParameter(this.bitcrusher.wet, state.bitcrusher ? Math.min(1, 0.8 * dial.amount) : 0, rampTime);
+    rampLiveParameter(this.delay.wet, state.delay ? Math.min(1, 0.5 * dial.amount) : 0, rampTime);
+    rampLiveParameter(this.delay.feedback, dial.feedback, rampTime);
     // Reverb is lazy — only initialize it when actually enabled
     if (state.reverb) {
       const reverb = this.getOrCreateReverb();
-      reverb.wet.rampTo(Math.min(1, 0.7 * dial.amount), rampTime);
+      rampLiveParameter(reverb.wet, Math.min(1, 0.7 * dial.amount), rampTime);
       queueReverbDecay(reverb, dial.decay);
     } else if (this.reverb) {
-      this.reverb.wet.rampTo(0, rampTime);
+      rampLiveParameter(this.reverb.wet, 0, rampTime);
     }
     if (wasSustaining && !this.sustainEnabled) this.releaseAll();
   }
 
   public setVolume(vol: number) {
     const db = Tone.gainToDb(Math.max(0.001, vol));
-    this.volumeNode.volume.rampTo(db, 0.1);
+    // Mute/solo also writes this parameter, so it must not use the FX target cache.
+    this.volumeNode.volume.rampTo(db, 0.1, Tone.immediate());
   }
 
   public setMuteSolo(isMuted: boolean, isSoloed: boolean, anySoloActive: boolean) {
