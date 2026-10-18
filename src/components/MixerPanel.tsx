@@ -36,7 +36,7 @@ export function MixerPanel() {
     <aside className="kasync-mixer absolute top-[110px] left-8 z-40 flex flex-col gap-2 pointer-events-none w-48" aria-label="Looper mixer">
       
       {/* Sleek Export Header */}
-      <div className="pointer-events-auto flex flex-col gap-1 bg-black/80 backdrop-blur-3xl border-l-2 border-t border-r border-b border-t-[var(--color-metal-dark)] border-r-[var(--color-metal-dark)] border-b-[var(--color-primary-glow)] border-l-[var(--color-metal-light)] px-2 py-1 shadow-[0_5px_15px_rgba(157,78,221,0.15)] rounded-t-md">
+      <div className="kasync-rail-heading pointer-events-auto">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-[var(--color-metal-light)] font-display font-bold uppercase tracking-widest whitespace-nowrap" style={{ fontSize: '10px' }}>Master <span className="text-[var(--color-primary-glow)]">Out</span></span>
           <div className="flex gap-[3px]">
@@ -56,6 +56,8 @@ export function MixerPanel() {
           <button
             onClick={handleExportWav}
             disabled={isExportingWav}
+            aria-label={isExportingWav ? 'Exporting WAV' : 'Export WAV'}
+            aria-busy={isExportingWav}
             className={`px-1.5 py-0.5 text-[8px] font-display font-bold leading-none uppercase tracking-widest rounded-sm transition-all flex items-center justify-center min-w-[28px] border border-transparent ${
               isExportingWav 
                 ? 'bg-[var(--color-highlight)] text-black cursor-wait' 
@@ -72,6 +74,8 @@ export function MixerPanel() {
           {/* MIDI Config toggle */}
           <button
             onClick={togglePanel}
+            aria-label="MIDI input and output settings"
+            aria-expanded={isPanelOpen}
             title="MIDI I/O Settings"
             className={`w-[16px] h-[12px] text-[6px] flex items-center justify-center rounded-sm transition-all border ${
               isPanelOpen
@@ -89,11 +93,13 @@ export function MixerPanel() {
         {tracks.map((track) => (
           <div 
             key={track.id} 
+            data-armed={track.isArmed}
             className={`kasync-mixer-track pointer-events-auto flex w-full min-w-0 items-center gap-2 overflow-hidden bg-black/60 backdrop-blur-xl border-l-2 border-t border-r border-b border-t-[var(--color-metal-dark)] border-r-[var(--color-metal-dark)] border-b-[var(--color-metal-dark)] rounded-r-md px-2 py-1 shadow-lg transition-all hover:bg-black/80 group ${track.isArmed ? 'border-l-[var(--color-primary-glow)] bg-black/80' : 'border-l-[var(--color-metal-light)]'}`}
           >
           {/* Track Number & Arm */}
           <button
             aria-label={`Arm Track ${track.id + 1}`}
+            title={`Arm Track ${track.id + 1}`}
             aria-pressed={track.isArmed}
             onClick={() => armTrack(track.id)}
             className={`w-5 h-5 shrink-0 rounded flex items-center justify-center font-bold text-[9px] transition-all ${
@@ -110,6 +116,7 @@ export function MixerPanel() {
           {/* Instrument Selector */}
           <WakandanSelect 
             aria-label={`Select Instrument for Track ${track.id + 1}`}
+            title={track.instrument}
             value={track.instrument}
             onChange={(e) => setTrackProperty(track.id, 'instrument', e.target.value as InstrumentType)}
             className="w-16 min-w-0 flex-1 text-[10px]"
@@ -120,9 +127,10 @@ export function MixerPanel() {
           </WakandanSelect>
 
           {/* Mute / Solo */}
-          <div className="flex gap-1 shrink-0 ml-auto">
+          <div className="kasync-track-switches flex gap-1 shrink-0 ml-auto">
             <button
               aria-label={`Mute Track ${track.id + 1}`}
+              title="Mute track"
               aria-pressed={track.isMuted}
               onClick={() => setTrackProperty(track.id, 'isMuted', !track.isMuted)}
               className={`w-4 h-4 rounded-sm text-[8px] font-bold flex items-center justify-center transition-all ${track.isMuted ? 'bg-[var(--color-danger)] text-white shadow-[0_0_5px_var(--color-danger)]' : 'bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white'}`}
@@ -131,6 +139,7 @@ export function MixerPanel() {
             </button>
             <button
               aria-label={`Solo Track ${track.id + 1}`}
+              title="Solo track"
               aria-pressed={track.isSoloed}
               onClick={() => setTrackProperty(track.id, 'isSoloed', !track.isSoloed)}
               className={`w-4 h-4 rounded-sm text-[8px] font-bold flex items-center justify-center transition-all ${track.isSoloed ? 'bg-[var(--color-highlight)] text-black shadow-[0_0_5px_var(--color-highlight)]' : 'bg-[var(--color-metal)] text-[var(--color-metal-light)] hover:text-white'}`}
