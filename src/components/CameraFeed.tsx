@@ -38,7 +38,7 @@ export function CameraFeed() {
         </div>
       )}
       {error && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 text-red-500 text-xs font-bold bg-black/80 px-4 py-2 rounded tracking-widest uppercase shadow-[0_0_10px_red]">
+        <div role="alert" className="kasync-camera-error absolute top-4 left-1/2 -translate-x-1/2 z-10 text-red-500 text-xs font-bold bg-black/80 px-4 py-2 rounded tracking-widest uppercase shadow-[0_0_10px_red]">
           {error}
         </div>
       )}
