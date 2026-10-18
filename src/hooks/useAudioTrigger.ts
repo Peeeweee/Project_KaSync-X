@@ -8,6 +8,8 @@ import { getScreenHands } from '../tracking/handUtils';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { isVolumeHand } from '../store/volumeGesture';
 import { recordNoteRelease, type NoteReleaseReason } from '../diagnostics/liveNoteRelease';
+import { handRecoveryMs } from '../tracking/handRecovery';
+import { useHandRecoveryStore } from '../store/handRecovery';
 
 /** Live key-down/up events bypass React rendering and preserve performed durations. */
 export function useAudioTrigger(audioStarted: boolean) {
@@ -32,6 +34,7 @@ export function useAudioTrigger(audioStarted: boolean) {
     const clearRelease = () => {
       if (releaseTimer !== null) clearTimeout(releaseTimer);
       releaseTimer = null;
+      if (useHandRecoveryStore.getState().active) useHandRecoveryStore.setState({ active: false });
     };
     const release = (reason: NoteReleaseReason, hand?: HandData) => {
       if (owner !== null) recordNoteRelease(reason, Math.max(0,performance.now()-attackAt),hand);
@@ -97,25 +100,36 @@ export function useAudioTrigger(audioStarted: boolean) {
       const playingHands = mode === 'Chord' || mode === 'Song'
         ? [leftHand ?? (allHands.length === 1 ? allHands[0] : null)].filter((h): h is HandData => !!h && !isVolumeHand(h))
         : [leftHand ?? rightHand ?? allHands[0]].filter((h): h is HandData => !!h && !isVolumeHand(h));
-      if (latchedPitch && !playingHands.some(h => h.isPinching && identity(h) === latchedPitch!.hand)) latchedPitch = null;
+      if (latchedPitch) {
+        const visible = allHands.find(h => identity(h) === latchedPitch!.hand);
+        if (visible && (!visible.isPinching || isVolumeHand(visible))) {
+          latchedPitch = null;
+          if (owner === null) clearRelease();
+        }
+      }
       if (owner !== null && !playingHands.some(h => identity(h) === owner) &&
           hands.some(h => identity(h) === owner) && playingHands.length > 0) {
         // A lone hand can play either wheel. Once a second hand establishes a
         // note/quality pair, articulation belongs to the note hand immediately.
         owner = identity(playingHands[0]);
       }
-      if (owner !== null && !playingHands.some(h => identity(h) === owner)) {
+      const recoveryOwner = owner ?? latchedPitch?.hand;
+      if (recoveryOwner != null && !playingHands.some(h => identity(h) === recoveryOwner)) {
         // Treat loss of the owning hand as a dropout even while a second hand
         // remains visible. Do not steal or choke the voice during this guard.
-        const fps = useTrackingSettingsStore.getState().actualTrackingFps;
-        const guardMs = hands.length > 0 && fps && fps > 0 ? Math.min(250, Math.max(90, 2000 / fps)) : 90;
-        if (releaseTimer === null) releaseTimer = setTimeout(() => {
-          releaseTimer = null;
-          previous.clear();
-          release('hand-lost');
-        }, guardMs);
+        if (releaseTimer === null) {
+          useHandRecoveryStore.setState({ active: true });
+          releaseTimer = setTimeout(() => {
+            releaseTimer = null;
+            useHandRecoveryStore.setState({ active: false });
+            previous.clear();
+            release('hand-lost');
+          }, handRecoveryMs(useTrackingSettingsStore.getState().actualTrackingFps));
+        }
         return;
       }
+      // A visible hand has priority: an open pinch or a cut stops immediately.
+      if (playingHands.length > 0) clearRelease();
       const fresh = playingHands.find(h => {
         const prev = previous.get(identity(h));
         const id = h.pressId ?? 0;
@@ -178,19 +192,11 @@ export function useAudioTrigger(audioStarted: boolean) {
           looperService.keepLiveNotesAlive();
         }
       } else if (owner !== null) {
-        if (hands.length > 0) {
-          clearRelease();
-          const reason = current && source === 'pinch' && !current.isPinching ? 'pinch-open'
-            : current?.articulationReason === 'finger-press' ? 'finger-press'
-            : source === 'point' ? 'point-lift' : 'key-up';
-          release(reason,current);
-        } else if (releaseTimer === null) {
-          releaseTimer = setTimeout(() => {
-            releaseTimer = null;
-            previous.clear();
-            release('hand-lost');
-          }, 90);
-        }
+        clearRelease();
+        const reason = current && source === 'pinch' && !current.isPinching ? 'pinch-open'
+          : current?.articulationReason === 'finger-press' ? 'finger-press'
+          : source === 'point' ? 'point-lift' : 'key-up';
+        release(reason,current);
       }
     };
     const unsubHands = subscribeToHandFrames(() => trigger(true));
