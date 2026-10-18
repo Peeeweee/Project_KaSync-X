@@ -8,6 +8,7 @@ import { dialDelta } from '../tracking/volumeDial';
 import { openPalmPose, OpenPalmDialTracker } from '../tracking/openPalmDial';
 import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { useEffectDialStore } from '../store/effectDial';
+import { PerformanceRim } from './PerformanceRim';
 
 const R = 267;
 const ARC = 2 * Math.PI * R * 0.75;
@@ -94,19 +95,27 @@ export function VolumeRing({ kind = 'volume' }: { kind?: 'volume' | 'effects' })
   };
   const active = !!owner || dragging;
   const label = kind === 'volume' ? 'Master volume' : 'Effect amount and duration';
+  const angle = (135 + percent * 2.7) * Math.PI / 180;
+  const handleX = 275 + R * Math.cos(angle), handleY = 275 + R * Math.sin(angle);
+  const hint = dragging ? 'ADJUSTING' : kind === 'effects' && !effectNames ? 'ENABLE FX' : ready ? '5 / 5 LINKED' : 'SHOW PALM';
   return <><div className={`kasync-volume-ring kasync-performance-wheel ${kind === 'volume' ? 'kasync-performance-wheel--left' : 'kasync-performance-wheel--right is-effects'} ${active ? 'is-active' : ''} ${ready ? 'is-ready' : ''}`}>
     <svg ref={svg} className="kasync-wheel-svg" viewBox="0 0 550 550" aria-label={`${label} dial`}>
       {kind === 'effects' && mode === 'Melody' && <circle cx="275" cy="275" r="245" fill="rgba(8,12,20,.65)" />}
+      {kind === 'volume' && <PerformanceRim />}
       <circle cx="275" cy="275" r={R} className="volume-ring-track" />
-      <g transform={`rotate(${135 + percent * 2.7} 275 275)`} className="volume-ring-ticks">
-        {TICKS.map(i => <path key={i} d="M 535 275 L 540 275" transform={`rotate(${i * 9} 275 275)`} />)}
+      <g transform="rotate(135 275 275)" className="volume-ring-ticks" aria-hidden="true">
+        {TICKS.map(i => <path key={i} className={`volume-ring-tick${i <= Math.round(percent * .3) ? ' is-lit' : ''}`} d="M 535 275 L 540 275" transform={`rotate(${i * 9} 275 275)`} />)}
       </g>
       <circle cx="275" cy="275" r={R} className="volume-ring-level" transform="rotate(135 275 275)"
         strokeDasharray={`${ARC * percent / 100} ${2 * Math.PI * R}`} />
+      <g className="volume-ring-handle" aria-hidden="true" pointerEvents="none">
+        <circle cx={handleX} cy={handleY} r="7" className="volume-ring-handle-rim" />
+        <circle cx={handleX} cy={handleY} r="3" className="volume-ring-handle-core" />
+      </g>
       <circle cx="275" cy="275" r={R} className="volume-ring-grip" role="slider" tabIndex={0}
         aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
         aria-describedby={`ring-hint-${kind}`}
-        aria-valuetext={`${percent} percent. Show five extended fingers over this ring and rotate your wrist clockwise to increase.`}
+        aria-valuetext={`${percent} percent. Show five extended fingers over this ring and rotate your wrist clockwise to increase.${kind === 'effects' && !effectNames ? ' Enable an effect to hear changes.' : ''}`}
         onKeyDown={keyDown}
         onPointerDown={e => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); drag.current = pointerAngle(e); setDragging(true); }}
         onPointerMove={e => { if (drag.current === null) return; const angle = pointerAngle(e); const delta = dialDelta(drag.current, angle);
@@ -121,12 +130,12 @@ export function VolumeRing({ kind = 'volume' }: { kind?: 'volume' | 'effects' })
           style={{ fill: ready ? 'currentColor' : '#ffffff30', stroke: 'none' }} />)}
         <text x="275" y="252" className="volume-ring-label">{kind === 'volume' ? 'VOLUME' : 'FX + TAIL'}</text>
         <text x="275" y="281" className="volume-ring-value">{percent}<tspan className="volume-ring-unit">%</tspan></text>
-        <text x="275" y="302" className="volume-ring-hint">{dragging ? 'ADJUSTING' : ready ? '5 / 5 LINKED' : 'SHOW PALM'}</text>
+        <text x="275" y="302" className="volume-ring-hint">{hint}</text>
       </g>
     </svg>
   </div>
     <div id={`ring-hint-${kind}`} className={`kasync-ring-caption kasync-ring-caption--${kind}`}>
-      <strong>{ready ? 'Five fingers linked · turn wrist' : 'Open palm · turn wrist'}</strong>
+      <strong>{dragging ? `Adjusting ${kind === 'volume' ? 'volume' : 'effects'}` : ready ? 'Five fingers linked · turn wrist' : 'Open palm · turn wrist'}</strong>
       <span>{kind === 'volume' ? 'Clockwise louder · counterclockwise softer' : effectNames ? 'Clockwise stronger · longer tail' : 'Enable an effect in the FX controls'}</span>
     </div>
   </>;
