@@ -200,7 +200,7 @@ function TrackingSettingsContent() {
         </button>
       </div>
 
-      <div className="shrink-0 px-4 py-2"><LiveGestureStatus /></div>
+      <div className="kasync-tracking-live shrink-0 px-4 py-2" tabIndex={0} role="region" aria-label="Gesture and audio diagnostics"><LiveGestureStatus /></div>
       <div className="kasync-tracking-content space-y-4">
         <dl className="grid grid-cols-2 gap-2 border-y border-white/10 py-3 font-mono text-[9px] text-white/60" aria-label="Live tracking performance">
           <div><dt>Actual tracking</dt><dd className="text-white">{settings.actualTrackingFps?.toFixed(1) ?? '—'} FPS</dd></div>
