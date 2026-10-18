@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Tone from 'tone';
+import { applyMasterVolume } from './audio/transitions';
 import { CameraFeed } from './components/CameraFeed';
 import { CanvasOverlay } from './components/CanvasOverlay';
 import { RootWheel } from './components/RootWheel';
@@ -158,13 +159,9 @@ function App() {
 
   // Volume reaches the audio graph directly, without waiting for a React render.
   useEffect(() => {
-    const apply = (volume: number) => {
-      Tone.Destination.mute = volume === 0;
-      if (volume > 0) Tone.Destination.volume.rampTo(20 * Math.log10(volume), 0.06);
-    };
-    apply(useLooperStore.getState().masterVolume);
+    applyMasterVolume(useLooperStore.getState().masterVolume);
     return useLooperStore.subscribe((state, previous) => {
-      if (state.masterVolume !== previous.masterVolume) apply(state.masterVolume);
+      if (state.masterVolume !== previous.masterVolume) applyMasterVolume(state.masterVolume);
     });
   }, []);
 
@@ -234,7 +231,7 @@ function App() {
       <div className="kasync-logo absolute top-8 left-8 z-40 pointer-events-none flex items-center gap-4">
         {/* Geometric Hexagon Icon */}
         <div className="relative w-10 h-10 flex items-center justify-center">
-          <div className="absolute inset-0 border-[1.5px] border-[var(--color-primary)] opacity-40 animate-pulse rotate-45"></div>
+          <div className="absolute inset-0 border-[1.5px] border-[var(--color-primary)] opacity-40 rotate-45"></div>
           <div className="absolute inset-1 border-[1.5px] border-[var(--color-secondary)] opacity-80 rotate-12"></div>
           <div className="w-2 h-2 bg-[var(--color-secondary)] shadow-[0_0_10px_var(--color-secondary)] rotate-45"></div>
         </div>
