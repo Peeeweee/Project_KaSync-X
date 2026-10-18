@@ -29,7 +29,7 @@ const { mockAudioNode, mockPart } = vi.hoisted(() => ({
     chain: vi.fn().mockReturnThis(),
     wet: { value: 0, rampTo: vi.fn() },
     feedback: { value: 0.35, rampTo: vi.fn() },
-    volume: { value: 0, rampTo: vi.fn() },
+    volume: { value: 0, rampTo: vi.fn(), linearRampTo: vi.fn() },
     gain: { value: 1, cancelScheduledValues: vi.fn(), rampTo: vi.fn() },
   },
   mockPart: {
@@ -84,6 +84,7 @@ vi.mock('tone', () => {
     Meter: MockClass,
     Volume: MockClass,
     Destination: mockAudioNode,
+    getDestination: () => mockAudioNode,
     gainToDb: vi.fn((val) => 20 * Math.log10(val)),
     start: vi.fn(),
     Time: vi.fn(() => ({ toSeconds: () => 0.125 })),
