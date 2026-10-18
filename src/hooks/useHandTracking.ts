@@ -9,8 +9,7 @@ import { recordTrackingCapture } from '../diagnostics/trackingCapture';
 import { MainInferenceFrame, captureInferenceBitmap } from '../tracking/inferenceFrame';
 import { HandEmaFilter } from '../tracking/emaFilter';
 import { computeGestures } from '../tracking/gestureRecognizer';
-import { PointTapTracker } from '../tracking/pointTapTracker';
-import { PinchPressTracker } from '../tracking/pinchPressTracker';
+import { HandGestureMemory, handRecoveryMs } from '../tracking/handRecovery';
 import { measureFingerCurls } from '../tracking/fingerArticulation';
 import { InferenceCadence } from '../tracking/inferenceCadence';
 import { TrackingMetrics, EMPTY_TRACKING_METRICS } from '../tracking/trackingMetrics';
@@ -63,9 +62,7 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
   const backendRef = useRef<InferenceBackend>(null);
   const emaFilterRef = useRef(new HandEmaFilter(useTrackingSettingsStore.getState().smoothingAlpha));
   const roleTrackerRef = useRef(new HandRoleTracker());
-  const previousPinchesRef = useRef(new Map<string, boolean>());
-  const previousPointsRef = useRef(new Map<string, PointTapTracker>());
-  const pinchPressesRef = useRef(new Map<string, PinchPressTracker>());
+  const gestureMemoryRef = useRef(new HandGestureMemory());
   const inFlightRequestRef = useRef<number | null>(null);
   const requestSequenceRef = useRef(0);
   const requestStartedAtRef = useRef(0);
@@ -99,17 +96,18 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
     const smoothedLandmarks = emaFilterRef.current.filter(
       rawLandmarks, detections.map(detection => detection.handedness),
     );
-    const currentKeys = new Set<string>();
+    const currentKeys = new Set(detections.map((detection, index) => detection.handedness === 'Unknown' ? `hand-${index}` : detection.handedness));
+    gestureMemoryRef.current.reconcile(currentKeys, performance.now(), handRecoveryMs(settingsRef.current.actualTrackingFps));
     const settings = settingsRef.current;
     const rawGestures: ReturnType<typeof computeGestures>[] = [];
 
     const smoothedHands: HandData[] = smoothedLandmarks.map((handLandmarks, index) => {
       const handedness = detections[index]?.handedness ?? 'Unknown';
       const identityKey = handedness === 'Unknown' ? `hand-${index}` : handedness;
-      currentKeys.add(identityKey);
+      const session = gestureMemoryRef.current.get(identityKey);
       // Gesture edges use fresh landmarks; smoothing is only for wheel/overlay position.
       const rawGesture = computeGestures(rawLandmarks[index], video, {
-        previousPinching: previousPinchesRef.current.get(identityKey) ?? false,
+        previousPinching: session.previousPinching,
         pinchThreshold: settings.pinchThreshold,
         pinchReleaseThreshold: settings.pinchReleaseThreshold,
         mirrored: settings.mirrorCamera,
@@ -123,37 +121,16 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
       gestures.isPinching = rawGesture.isPinching;
       gestures.pinchStrength = rawGesture.pinchStrength;
       gestures.pinchDistance = rawGesture.pinchDistance;
-      previousPinchesRef.current.set(identityKey, rawGesture.isPinching);
-      let tapTracker = previousPointsRef.current.get(identityKey);
-      if (!tapTracker) {
-        tapTracker = new PointTapTracker();
-        previousPointsRef.current.set(identityKey, tapTracker);
-      }
+      session.previousPinching = rawGesture.isPinching;
       rawGestures.push(rawGesture);
-      gestures.isPointPressed = tapTracker.update({ ...rawGesture, isPinching: gestures.isPinching });
-      let pressTracker = pinchPressesRef.current.get(identityKey);
-      if (!pressTracker) {
-        pressTracker = new PinchPressTracker();
-        pinchPressesRef.current.set(identityKey, pressTracker);
-      }
+      gestures.isPointPressed = session.point.update({ ...rawGesture, isPinching: gestures.isPinching });
       const fingerCurls = measureFingerCurls(rawLandmarks[index], rawGesture.imageYScale, detections[index].worldLandmarks);
-      const press = pressTracker.update({ ...rawGesture, isPinching: gestures.isPinching, fingerCurls });
+      const press = session.press.update({ ...rawGesture, isPinching: gestures.isPinching, fingerCurls });
       gestures.isTriggerActive = press.isKeyDown || gestures.isPointPressed;
       gestures.triggerVelocity = gestures.isPointPressed ? rawGesture.pointVelocity : gestures.pinchStrength;
       return { landmarks: handLandmarks, handedness, ...gestures, ...press, fingerCurls,
         isKeyDown: press.isKeyDown || gestures.isPointPressed };
     });
-
-    for (const key of previousPinchesRef.current.keys()) {
-      if (!currentKeys.has(key)) previousPinchesRef.current.delete(key);
-    }
-    for (const key of previousPointsRef.current.keys()) {
-      if (!currentKeys.has(key)) previousPointsRef.current.delete(key);
-    }
-
-    for (const key of pinchPressesRef.current.keys()) {
-      if (!currentKeys.has(key)) pinchPressesRef.current.delete(key);
-    }
 
     const roleAssignedHands = roleTrackerRef.current.assign(smoothedHands);
     const rawHands: HandData[] = rawLandmarks.map((handLandmarks, index) => {
@@ -263,9 +240,7 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
       if (video.srcObject === stream) video.srcObject = null;
       emaFilterRef.current.reset();
       roleTrackerRef.current.reset();
-      previousPinchesRef.current.clear();
-      previousPointsRef.current.clear();
-      pinchPressesRef.current.clear();
+      gestureMemoryRef.current.clear();
       inFlightRequestRef.current = null;
       const handStore = useHandStore.getState();
       handStore.setHands([], []);
@@ -283,9 +258,7 @@ export function useHandTracking(videoRef: RefObject<HTMLVideoElement | null>, de
     inFlightRequestRef.current = null;
     emaFilterRef.current.reset();
     roleTrackerRef.current.reset();
-    previousPinchesRef.current.clear();
-    previousPointsRef.current.clear();
-      pinchPressesRef.current.clear();
+    gestureMemoryRef.current.clear();
     useHandStore.getState().setHands([], []);
     useHandStore.getState().setIsTracking(false);
     let active = true;
