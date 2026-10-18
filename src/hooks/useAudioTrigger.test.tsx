@@ -9,6 +9,7 @@ import { useTrackingSettingsStore } from '../store/trackingSettings';
 import { useVolumeGestureStore } from '../store/volumeGesture';
 import { useLooperStore } from '../store/looperState';
 import { useLiveNoteReleaseStore } from '../diagnostics/liveNoteRelease';
+import { useHandRecoveryStore } from '../store/handRecovery';
 
 vi.mock('../looper/recorder', () => ({ looperService: {
   triggerChord: vi.fn(), triggerNote: vi.fn(), releaseChord: vi.fn(), releaseNote: vi.fn(),
@@ -26,6 +27,7 @@ const publish = (...hands: HandData[]) => act(() => useHandStore.getState().setH
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  useHandRecoveryStore.setState({ active: false });
   useLiveNoteReleaseStore.setState({lastRelease:null});
   useVolumeGestureStore.setState({ owner: null, effectOwner: null });
   useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: null });
@@ -36,6 +38,118 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('performed piano articulation', () => {
+  it.each(['Chord', 'Song', 'Melody'] as const)('bridges a single-hand dropout at low FPS without a duplicate attack in %s', mode => {
+    useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: 8 });
+    useMusicStore.getState().setMusicState({ mode });
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 3 };
+    const attack = mode === 'Melody' ? looperService.triggerNote : looperService.triggerChord;
+    publish(note);
+    vi.mocked(looperService.releaseChord).mockClear(); vi.mocked(looperService.releaseNote).mockClear();
+    publish();
+    act(() => vi.advanceTimersByTime(150));
+    expect(useHandRecoveryStore.getState().active).toBe(true);
+    publish(note);
+    expect(attack).toHaveBeenCalledTimes(1);
+    expect(useHandRecoveryStore.getState().active).toBe(false);
+    act(() => vi.advanceTimersByTime(300));
+    expect(looperService.releaseChord).not.toHaveBeenCalled();
+    expect(looperService.releaseNote).not.toHaveBeenCalled();
+  });
+
+  it.each(['Chord', 'Song', 'Melody'] as const)('preserves a cut through a short gap and resumes its pitch only on lift in %s', mode => {
+    useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: 8 });
+    useMusicStore.getState().setMusicState({ mode });
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 1 };
+    const attack = mode === 'Melody' ? looperService.triggerNote : looperService.triggerChord;
+    publish(note);
+    const first = vi.mocked(attack).mock.calls[0][0];
+    publish({ ...note, isKeyDown: false, articulationReason: 'finger-press' });
+    publish();
+    act(() => useMusicStore.getState().setMusicState({ hoveredRoot: null }));
+    act(() => vi.advanceTimersByTime(150));
+    publish({ ...note, isKeyDown: false, articulationReason: 'hold' });
+    expect(attack).toHaveBeenCalledTimes(1);
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+    publish({ ...note, pressId: 2, articulationReason: 'finger-lift' });
+    expect(attack).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(attack).mock.lastCall?.[0]).toEqual(first);
+  });
+
+  it('expires a lost cut and cannot resume a stale chord outside the wheel', () => {
+    useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: 8 });
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 1 };
+    publish(note);
+    publish({ ...note, isKeyDown: false, articulationReason: 'finger-press' });
+    publish();
+    act(() => useMusicStore.getState().setMusicState({ hoveredRoot: null }));
+    act(() => vi.advanceTimersByTime(250));
+    expect(useHandRecoveryStore.getState().active).toBe(false);
+    publish({ ...note, pressId: 2, articulationReason: 'finger-lift' });
+    expect(looperService.triggerChord).toHaveBeenCalledTimes(1);
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+  });
+
+  it('stops a sustained low-FPS dropout at its deadline without extending on unrelated updates', () => {
+    useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: 8 });
+    renderHook(() => useAudioTrigger(true));
+    publish({ ...hand(false, true), isKeyDown: true, pressId: 1 });
+    publish();
+    act(() => vi.advanceTimersByTime(200));
+    act(() => useMusicStore.getState().setMusicState({ activeNote: 'D' }));
+    act(() => vi.advanceTimersByTime(49));
+    expect(useMusicStore.getState().playingNotes.length).toBeGreaterThan(0);
+    act(() => vi.advanceTimersByTime(1));
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+    expect(useHandRecoveryStore.getState().active).toBe(false);
+    expect(useLiveNoteReleaseStore.getState().lastRelease?.reason).toBe('hand-lost');
+  });
+
+  it('clears pending recovery on mode change and unmount', () => {
+    const view = renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 1 };
+    publish(note); publish();
+    expect(useHandRecoveryStore.getState().active).toBe(true);
+    act(() => useMusicStore.getState().setMusicState({ mode: 'Melody' }));
+    expect(useHandRecoveryStore.getState().active).toBe(false);
+    publish(note); publish();
+    expect(useHandRecoveryStore.getState().active).toBe(true);
+    view.unmount();
+    expect(useHandRecoveryStore.getState().active).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('honors an open pinch on return immediately and discards the remembered pitch', () => {
+    useTrackingSettingsStore.getState().setRuntime({ actualTrackingFps: 8 });
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 1 };
+    publish(note); publish();
+    act(() => vi.advanceTimersByTime(100));
+    publish({ ...note, isPinching: false, isKeyDown: false });
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+    expect(useHandRecoveryStore.getState().active).toBe(false);
+    expect(useLiveNoteReleaseStore.getState().lastRelease?.reason).toBe('pinch-open');
+    act(() => useMusicStore.getState().setMusicState({ hoveredRoot: null }));
+    publish({ ...note, pressId: 2, articulationReason: 'finger-lift' });
+    expect(looperService.triggerChord).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends cut recovery when the returning hand takes volume control', () => {
+    renderHook(() => useAudioTrigger(true));
+    const note = { ...hand(false, true), isKeyDown: true, pressId: 1 };
+    publish(note);
+    publish({ ...note, isKeyDown: false, articulationReason: 'finger-press' });
+    publish();
+    expect(useHandRecoveryStore.getState().active).toBe(true);
+    act(() => useVolumeGestureStore.setState({ owner: 'left' }));
+    publish({ ...note, isPinching: false, isKeyDown: false });
+    expect(useHandRecoveryStore.getState().active).toBe(false);
+    expect(useMusicStore.getState().playingNotes).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it.each(['Chord','Song','Melody'] as const)('resumes the latched pitch through a wheel gap on return up in %s', mode => {
     useMusicStore.getState().setMusicState({mode,hoveredRoot:'C#',hoveredQuality:'min',hoveredBass:'G#'});
     renderHook(() => useAudioTrigger(true));
