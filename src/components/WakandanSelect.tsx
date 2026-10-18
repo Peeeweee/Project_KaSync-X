@@ -5,10 +5,10 @@ interface WakandanSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   children: ReactNode;
 }
 
-export function WakandanSelect({ color = 'var(--color-primary-glow)', children, className = '', ...props }: WakandanSelectProps) {
+export function WakandanSelect({ color = 'var(--color-primary-glow)', children, className = '', style, ...props }: WakandanSelectProps) {
   return (
     <div 
-      className="relative flex items-center border-l border-r hover:bg-white/5 transition-all duration-300 group"
+      className="kasync-select relative flex items-center border-l border-r hover:bg-white/5 transition-colors duration-150 group"
       style={{
         borderColor: `color-mix(in srgb, ${color} 30%, transparent)`,
       }}
@@ -19,8 +19,8 @@ export function WakandanSelect({ color = 'var(--color-primary-glow)', children, 
 
       <select
         {...props}
-        className={`appearance-none bg-transparent font-display font-bold uppercase tracking-widest text-[9px] outline-none cursor-pointer text-ellipsis overflow-hidden whitespace-nowrap pl-2 pr-5 py-[1px] leading-none ${className}`}
-        style={{ color, fontSize: '9px' }}
+        className={`appearance-none bg-transparent font-display font-bold uppercase tracking-widest text-[10px] outline-none cursor-pointer text-ellipsis overflow-hidden whitespace-nowrap pl-2 pr-5 py-[1px] leading-none ${className}`}
+        style={{ color, fontSize: 'var(--ui-control-size, 10px)', ...style }}
       >
         {children}
       </select>
