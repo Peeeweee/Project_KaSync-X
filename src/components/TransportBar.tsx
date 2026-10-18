@@ -6,6 +6,7 @@ import { useSongStore } from '../store/songStore';
 import { CHROMATIC_NOTES } from '../music/scales';
 import { WakandanSelect } from './WakandanSelect';
 import { looperService } from '../looper/recorder';
+import { PerformanceSelection } from './PerformanceSelection';
 
 /** Inline Song navigation widget for TransportBar in Song Mode */
 function SongTransportControls() {
@@ -76,7 +77,10 @@ function SongTransportControls() {
 }
 
 export function TransportBar() {
-  const { mode, showExtendedQualities, currentKey, snapToScale, currentScale, setMusicState } = useMusicStore();
+  const { mode, showExtendedQualities, currentKey, snapToScale, currentScale, setMusicState } = useMusicStore(useShallow(s => ({
+    mode: s.mode, showExtendedQualities: s.showExtendedQualities, currentKey: s.currentKey,
+    snapToScale: s.snapToScale, currentScale: s.currentScale, setMusicState: s.setMusicState,
+  })));
   const {
     isPlaying, isGlobalRecording, isCountingIn, quantize, bpm, metronomeEnabled,
     countInBars, overdubEnabled, undoHistory, redoHistory, setTransportState,
@@ -88,9 +92,10 @@ export function TransportBar() {
     setTransportState: s.setTransportState, tracks: s.tracks, setTrackProperty: s.setTrackProperty,
     undoTrack: s.undoTrack, redoTrack: s.redoTrack,
   })));
-  const [showFX, setShowFX] = useState(false);
+  const [panel, setPanel] = useState<'setup' | 'effects' | null>(null);
 
   const armedTrack = useMemo(() => tracks.find(t => t.isArmed) || tracks[0], [tracks]);
+  const effectCount = Object.values(armedTrack.effects).filter(Boolean).length;
   const canUndo = (undoHistory[armedTrack.id]?.length ?? 0) > 0;
   const canRedo = (redoHistory[armedTrack.id]?.length ?? 0) > 0;
 
@@ -98,51 +103,97 @@ export function TransportBar() {
     setTrackProperty(armedTrack.id, 'effects', { ...armedTrack.effects, [eff]: !armedTrack.effects[eff] });
   };
 
+  const closePanel = (container: HTMLElement | null) => {
+    container?.querySelector<HTMLButtonElement>('.kasync-panel-buttons [aria-expanded="true"]')?.focus();
+    setPanel(null);
+  };
+
   const hudLabelClass = "text-[8px] text-[#00f0ff] uppercase tracking-widest font-light mb-1 opacity-60";
   const hudValueClass = "bg-transparent font-medium text-sm tracking-wider outline-none text-center appearance-none cursor-pointer hover:text-white transition-colors duration-200";
 
   return (
-    <section className="kasync-transport absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center z-40 w-full max-w-[900px]" aria-label="Transport and performance controls">
-      
-      {/* ── FX MATRIX DROPDOWN (Pill shaped) ── */}
-      <div 
-        className={`pointer-events-auto flex gap-4 mb-4 transition-all duration-300 origin-bottom ${showFX ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}`}
-      >
-        <div className="px-8 py-3 rounded-full flex items-center gap-6 shadow-[0_0_30px_rgba(157,78,221,0.2)]"
-             style={{
-               background: 'rgba(10, 12, 20, 0.7)',
-               backdropFilter: 'blur(12px)',
-               border: '1px solid rgba(157,78,221,0.4)',
-             }}>
-          
-          <span className="text-[10px] text-[#9D4EDD] uppercase tracking-widest font-medium">
-            FX Core {armedTrack.id + 1}
-          </span>
-          
-          <div className="w-[1px] h-6 bg-[#9D4EDD]/30"></div>
-
-          <div className="flex gap-2">
-            {(Object.keys(armedTrack.effects) as Array<keyof typeof armedTrack.effects>).map(eff => {
-              const active = armedTrack.effects[eff];
-              return (
-                <button
-                  key={eff}
-                  onClick={() => toggleEffect(eff)}
-                  className={`px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest transition-all ${
-                    active 
-                      ? 'bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/50 shadow-[0_0_10px_rgba(0,240,255,0.3)]' 
-                      : 'bg-transparent text-[#6E7C9C] border border-white/10 hover:border-white/30 hover:text-white'
-                  }`}
-                >
-                  {eff}
-                </button>
-              );
-            })}
-          </div>
+    <section className="kasync-transport kasync-performance-dock" aria-label="Transport and performance controls"
+      onKeyDown={event => {
+        if (event.key === 'Escape' && panel) {
+          event.stopPropagation(); closePanel(event.currentTarget);
+        }
+      }}>
+      {panel && <div className="kasync-control-panel" id="performance-control-panel" role="region" aria-label={panel === 'setup' ? 'Performance setup' : 'Track effects'}>
+        <div className="kasync-control-panel-heading"><strong>{panel === 'setup' ? 'Performance setup' : 'Track ' + (armedTrack.id + 1) + ' effects'}</strong>
+          <button aria-label="Close control panel" onClick={event => closePanel(event.currentTarget.closest('section'))}>Close ×</button>
         </div>
-      </div>
+        {panel === 'setup' ? <>
+        <div className="kasync-setup-fields">
+          <div className="flex flex-col items-center">
+            <span className={hudLabelClass}>Quantize</span>
+            <button
+              aria-label="Quantize to sixteenth notes" aria-pressed={quantize}
+              onClick={() => setTransportState({ quantize: !quantize })}
+              className={`${hudValueClass} w-10 ${quantize ? 'text-[#9D4EDD]' : 'text-[#6E7C9C]'}`}
+            >
+              {quantize ? '16N' : 'OFF'}
+            </button>
+          </div>
 
-      <div className="kasync-transport-tools pointer-events-auto mb-2 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/65 px-3 py-1.5 font-mono text-[8px] uppercase tracking-wider backdrop-blur-xl">
+
+          {mode !== 'Song' && (
+            <>
+              <div className="flex flex-col items-center">
+                <span className={hudLabelClass}>Root</span>
+                <WakandanSelect
+                  aria-label="Key" value={currentKey}
+                  onChange={(e) => setMusicState({ currentKey: e.target.value })}
+                  className="text-[12px] font-bold"
+                  color="#00f0ff"
+                >
+                  {CHROMATIC_NOTES.map(n => <option key={n} value={n} className="bg-[#0a0b10]">{n}</option>)}
+                </WakandanSelect>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <span className={hudLabelClass}>Scale</span>
+                <WakandanSelect
+                  aria-label="Scale" value={currentScale}
+                  onChange={(e) => setMusicState({ currentScale: e.target.value })}
+                  className="text-[12px] font-bold"
+                  color="#9D4EDD"
+                >
+                  <option value="Major" className="bg-[#0a0b10]">Major</option>
+                  <option value="Minor" className="bg-[#0a0b10]">Minor</option>
+                  <option value="PentatonicMajor" className="bg-[#0a0b10]">Pentatonic</option>
+                  <option value="Blues" className="bg-[#0a0b10]">Blues</option>
+                </WakandanSelect>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <span className={hudLabelClass}>Snap</span>
+                <button
+                  aria-label="Snap to scale" aria-pressed={snapToScale}
+                  onClick={() => setMusicState({ snapToScale: !snapToScale })}
+                  className={`${hudValueClass} w-10 ${snapToScale ? 'text-[#00f0ff]' : 'text-[#6E7C9C]'}`}
+                >
+                  {snapToScale ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {mode === 'Chord' && (
+            <div className="flex flex-col items-center">
+              <span className={hudLabelClass}>Voicing</span>
+              <button
+                aria-label="Extended voicings" aria-pressed={showExtendedQualities}
+                onClick={() => setMusicState({ showExtendedQualities: !showExtendedQualities })}
+                className={`${hudValueClass} ${showExtendedQualities ? 'text-[#00f0ff]' : 'text-[#6E7C9C]'}`}
+              >
+                {showExtendedQualities ? 'EXT' : 'BASE'}
+              </button>
+            </div>
+          )}
+
+        </div>
+        <div className="kasync-recording-options"><span>Recording</span>
+<div className="kasync-transport-tools pointer-events-auto mb-2 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/65 px-3 py-1.5 font-mono text-[8px] uppercase tracking-wider backdrop-blur-xl">
         <button
           onClick={() => setTransportState({ metronomeEnabled: !metronomeEnabled })}
           aria-pressed={metronomeEnabled}
@@ -169,26 +220,22 @@ export function TransportBar() {
         <button disabled={!canUndo || isGlobalRecording} onClick={() => undoTrack(armedTrack.id)} className="px-1.5 py-1 text-[#6E7C9C] hover:text-white disabled:opacity-20">Undo</button>
         <button disabled={!canRedo || isGlobalRecording} onClick={() => redoTrack(armedTrack.id)} className="px-1.5 py-1 text-[#6E7C9C] hover:text-white disabled:opacity-20">Redo</button>
       </div>
-
-      {/* ── MAIN TRANSPORT BAR (Sleek Rounded Glass Pill) ── */}
-      <div 
-        className="kasync-transport-main pointer-events-auto flex items-center justify-between w-full px-4 py-3 rounded-full shadow-[0_10px_40px_rgba(0,0,0,0.5)] transition-all"
-        style={{
-          background: 'rgba(5, 7, 14, 0.65)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(0, 240, 255, 0.2)',
-          boxShadow: 'inset 0 0 20px rgba(157,78,221,0.05), 0 0 20px rgba(0,0,0,0.5)'
-        }}
-      >
-        
-        {/* Play/Record Section (Left) */}
-        <div className="flex items-center gap-3 pl-2">
+        </div>
+        </> : <div className="kasync-effect-options">
+          {(Object.keys(armedTrack.effects) as Array<keyof typeof armedTrack.effects>).map(eff => <button key={eff}
+            aria-pressed={armedTrack.effects[eff]} onClick={() => toggleEffect(eff)}>{eff}</button>)}
+        </div>}
+      </div>}
+      <PerformanceSelection />
+      <div className="kasync-primary-controls">
+        <div className="kasync-playback">
           <button
-            aria-label="Play"
+            aria-label={isPlaying ? 'Stop playback' : 'Play'}
+            aria-pressed={isPlaying}
             onClick={() => setTransportState({ isPlaying: !isPlaying })}
             className={`w-12 h-12 flex items-center justify-center rounded-full transition-all ${
-              isPlaying 
-                ? 'bg-[#00f0ff]/10 border border-[#00f0ff]/60 shadow-[0_0_15px_rgba(0,240,255,0.4)]' 
+              isPlaying
+                ? 'bg-[#00f0ff]/10 border border-[#00f0ff]/60 shadow-[0_0_15px_rgba(0,240,255,0.4)]'
                 : 'bg-black/40 border border-white/10 hover:border-[#00f0ff]/40'
             }`}
           >
@@ -202,7 +249,7 @@ export function TransportBar() {
             onClick={() => looperService.toggleRecording()}
             className={`w-12 h-12 flex items-center justify-center rounded-full transition-all ${
               isGlobalRecording || isCountingIn
-                ? 'bg-[#9D4EDD]/10 border border-[#9D4EDD]/60 shadow-[0_0_15px_rgba(157,78,221,0.4)]' 
+                ? 'bg-[#9D4EDD]/10 border border-[#9D4EDD]/60 shadow-[0_0_15px_rgba(157,78,221,0.4)]'
                 : 'bg-black/40 border border-white/10 hover:border-[#9D4EDD]/40'
             }`}
           >
@@ -212,80 +259,21 @@ export function TransportBar() {
           </button>
         </div>
 
-        {/* Elegant Arc Separator */}
-        <div className="w-[1px] h-10 bg-gradient-to-b from-transparent via-[#00f0ff]/30 to-transparent mx-2"></div>
 
-        {/* HUD Settings Section (Center) */}
-        <div className="flex flex-1 justify-between items-center px-4">
-          
+        <div className="kasync-primary-settings">
           <div className="flex flex-col items-center">
             <span className={hudLabelClass}>BPM</span>
-            <input 
-              type="number" value={bpm} min={30} max={300}
+            <input
+              aria-label="Tempo" type="number" value={bpm} min={30} max={300}
               onChange={(e) => setTransportState({ bpm: Math.max(30, Math.min(300, parseInt(e.target.value) || 120)) })}
               className={`${hudValueClass} w-10 text-[#00f0ff]`}
             />
           </div>
 
-          <div className="flex flex-col items-center">
-            <span className={hudLabelClass}>Time</span>
-            <button 
-              onClick={() => setTransportState({ quantize: !quantize })}
-              className={`${hudValueClass} w-10 ${quantize ? 'text-[#9D4EDD]' : 'text-[#6E7C9C]'}`}
-            >
-              {quantize ? '16N' : 'OFF'}
-            </button>
-          </div>
-
-
-          {/* ── SONG MODE: hide Root/Scale/Snap, show Song info ── */}
-          {mode !== 'Song' && (
-            <>
-              <div className="flex flex-col items-center">
-                <span className={hudLabelClass}>Root</span>
-                <WakandanSelect 
-                  value={currentKey}
-                  onChange={(e) => setMusicState({ currentKey: e.target.value })}
-                  className="text-[12px] font-bold"
-                  color="#00f0ff"
-                >
-                  {CHROMATIC_NOTES.map(n => <option key={n} value={n} className="bg-[#0a0b10]">{n}</option>)}
-                </WakandanSelect>
-              </div>
-
-              <div className="flex flex-col items-center">
-                <span className={hudLabelClass}>Scale</span>
-                <WakandanSelect 
-                  value={currentScale}
-                  onChange={(e) => setMusicState({ currentScale: e.target.value })}
-                  className="text-[12px] font-bold"
-                  color="#9D4EDD"
-                >
-                  <option value="Major" className="bg-[#0a0b10]">Major</option>
-                  <option value="Minor" className="bg-[#0a0b10]">Minor</option>
-                  <option value="PentatonicMajor" className="bg-[#0a0b10]">Pentatonic</option>
-                  <option value="Blues" className="bg-[#0a0b10]">Blues</option>
-                </WakandanSelect>
-              </div>
-
-              <div className="flex flex-col items-center">
-                <span className={hudLabelClass}>Snap</span>
-                <button 
-                  onClick={() => setMusicState({ snapToScale: !snapToScale })}
-                  className={`${hudValueClass} w-10 ${snapToScale ? 'text-[#00f0ff]' : 'text-[#6E7C9C]'}`}
-                >
-                  {snapToScale ? 'ON' : 'OFF'}
-                </button>
-              </div>
-            </>
-          )}
-
-          {mode === 'Song' && <SongTransportControls />}
-
           <div className="flex flex-col items-center mt-1">
             <span className={hudLabelClass}>Mode</span>
             <WakandanSelect
-              value={mode}
+              aria-label="Performance mode" value={mode}
               onChange={(e) => setMusicState({ mode: e.target.value as 'Melody' | 'Chord' | 'Song' })}
               className="text-[12px] font-bold"
               color="#9D4EDD"
@@ -295,40 +283,17 @@ export function TransportBar() {
               <option value="Song" className="bg-[#0a0b10]">Song</option>
             </WakandanSelect>
           </div>
-          
-          {mode === 'Chord' && (
-            <div className="flex flex-col items-center">
-              <span className={hudLabelClass}>Voicing</span>
-              <button
-                onClick={() => setMusicState({ showExtendedQualities: !showExtendedQualities })}
-                className={`${hudValueClass} ${showExtendedQualities ? 'text-[#00f0ff]' : 'text-[#6E7C9C]'}`}
-              >
-                {showExtendedQualities ? 'EXT' : 'BASE'}
-              </button>
-            </div>
-          )}
-        </div>
 
-        {/* Elegant Arc Separator */}
-        <div className="w-[1px] h-10 bg-gradient-to-b from-transparent via-[#9D4EDD]/30 to-transparent mx-2"></div>
 
-        {/* FX Button Section (Right) */}
-        <div className="flex items-center pr-2">
-          <button 
-            onClick={() => setShowFX(!showFX)}
-            className={`w-24 h-10 rounded-full border flex items-center justify-center transition-all ${
-              showFX 
-                ? 'bg-[#9D4EDD]/10 border-[#9D4EDD]/50 text-[#9D4EDD] shadow-[0_0_15px_rgba(157,78,221,0.2)]' 
-                : 'bg-transparent border-white/10 text-[#6E7C9C] hover:border-white/30 hover:text-white'
-            }`}
-          >
-            <span className="text-[10px] font-mono font-medium tracking-widest uppercase">
-              {showFX ? 'FX On' : 'FX Off'}
-            </span>
-          </button>
         </div>
-        
+        <div className="kasync-panel-buttons">
+          <button aria-expanded={panel === 'setup'} aria-controls={panel === 'setup' ? 'performance-control-panel' : undefined}
+            onClick={() => setPanel(panel === 'setup' ? null : 'setup')}>Setup</button>
+          <button aria-expanded={panel === 'effects'} aria-controls={panel === 'effects' ? 'performance-control-panel' : undefined}
+            onClick={() => setPanel(panel === 'effects' ? null : 'effects')}>FX <span>{effectCount || 'Off'}</span></button>
+        </div>
       </div>
+      {mode === 'Song' && <div className="kasync-song-navigation"><SongTransportControls /></div>}
     </section>
   );
 }
