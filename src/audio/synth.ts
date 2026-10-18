@@ -1,3 +1,4 @@
+import { rampLiveParameter } from './transitions';
 import * as Tone from 'tone';
 import { effectDialSettings, useEffectDialStore } from '../store/effectDial';
 import { queueReverbDecay } from './effectDial';
@@ -197,7 +198,8 @@ export class InstrumentService {
     }
 
     const eventTime = Tone.immediate();
-    this.outputGate.gain.cancelScheduledValues(eventTime);
+    // Tone's ramp holds the in-flight value before retargeting. Cancelling first
+    // would erase that ramp and can snap a fast cut/resume back to its start.
     this.outputGate.gain.rampTo(1, 0.006, eventTime);
     const notesToRelease = this.currentNotes.filter(note => !notes.includes(note));
     const notesToAttack = notes.filter(note => !this.currentNotes.includes(note));
@@ -233,7 +235,6 @@ export class InstrumentService {
     const eventTime = Tone.immediate();
     if (choke) {
       // Gate the entire live signal, including delay/reverb tails. Never reopen on a timer.
-      this.outputGate.gain.cancelScheduledValues(eventTime);
       this.outputGate.gain.rampTo(0, 0.006, eventTime);
     }
     if (this.isPlaying) {
@@ -277,16 +278,16 @@ export class InstrumentService {
     this.sustainEnabled = state.sustain;
     const rampTime = 0.1;
     const dial = effectDialSettings();
-    this.chorus.wet.rampTo(state.chorus ? Math.min(1, 0.5 * dial.amount) : 0, rampTime);
-    this.bitcrusher.wet.rampTo(state.bitcrusher ? Math.min(1, 0.7 * dial.amount) : 0, rampTime);
-    this.delay.wet.rampTo(state.delay ? Math.min(1, 0.4 * dial.amount) : 0, rampTime);
-    this.delay.feedback.rampTo(dial.feedback, rampTime);
+    rampLiveParameter(this.chorus.wet, state.chorus ? Math.min(1, 0.5 * dial.amount) : 0, rampTime);
+    rampLiveParameter(this.bitcrusher.wet, state.bitcrusher ? Math.min(1, 0.7 * dial.amount) : 0, rampTime);
+    rampLiveParameter(this.delay.wet, state.delay ? Math.min(1, 0.4 * dial.amount) : 0, rampTime);
+    rampLiveParameter(this.delay.feedback, dial.feedback, rampTime);
     if (state.reverb) {
       const rev = this.getOrCreateReverb();
-      rev.wet.rampTo(Math.min(1, 0.6 * dial.amount), rampTime);
+      rampLiveParameter(rev.wet, Math.min(1, 0.6 * dial.amount), rampTime);
       queueReverbDecay(rev, dial.decay);
     } else if (this.reverb) {
-      this.reverb.wet.rampTo(0, rampTime);
+      rampLiveParameter(this.reverb.wet, 0, rampTime);
     }
     if (wasSustaining && !this.sustainEnabled && this.pendingSustainRelease) {
       this.releaseVoices();
